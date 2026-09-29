@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="gu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hot Mix Plant Register</title>
+<meta name="theme-color" content="#1f4e79">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<header class="topbar no-print">
+  <div class="brand"><img src="icon.svg" alt=""><div><b>Hot Mix Plant Register</b><small id="hdrWork">—</small></div></div>
+</header>
+
+<nav class="tabs no-print" id="tabs">
+  <button data-tab="home" class="active">🏠 Home</button>
+  <button data-tab="chat">🤖 Chat</button>
+  <button data-tab="plant">🏭 Plant Register</button>
+  <button data-tab="bitumen">🛢️ Bitumen</button>
+  <button data-tab="vehicles">🚚 Vehicles</button>
+  <button data-tab="settings">⚙️ Settings</button>
+</nav>
+
+<main class="no-print">
+  <!-- HOME -->
+  <section id="tab-home" class="tab active">
+    <div class="cards" id="homeCards"></div>
+    <div class="panel">
+      <h3>Roz ka kaam</h3>
+      <ol class="steps">
+        <li><b>Gatepass</b> aaye to Chat mein photo daalo → reading check karo → Save.</li>
+        <li>Shaam ko <b>SCADA Excel</b> Chat ya Plant Register mein upload karo.</li>
+        <li>Truck-wise preview check karo (truck order, agg. temp) → <b>Save</b>.</li>
+        <li>Parishisht 1 / 3 / 5 <b>Print</b> ya Excel download karo.</li>
+      </ol>
+    </div>
+    <div class="panel"><h3>Recent days</h3><div id="homeRecent"></div></div>
+  </section>
+
+  <!-- CHAT -->
+  <section id="tab-chat" class="tab">
+    <div class="chat">
+      <div id="chatLog" class="chatlog"></div>
+      <form id="chatForm" class="chatbar">
+        <label class="iconbtn" title="Photo / Excel / PDF">📎<input type="file" id="chatFile" accept="image/*,.pdf,.xlsx,.xls,.csv" hidden></label>
+        <input id="chatInput" placeholder="Gatepass photo ya SCADA Excel daalo, ya sawaal pucho…" autocomplete="off">
+        <button class="btn primary" type="submit">Send</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- PLANT -->
+  <section id="tab-plant" class="tab">
+    <div class="panel">
+      <h3>1. SCADA report upload</h3>
+      <div class="row">
+        <input type="file" id="scadaFile" accept=".xlsx,.xls,.csv">
+        <span class="muted" id="scadaInfo">DRUM_MIX_….xlsx (AVN SCADA format)</span>
+      </div>
+    </div>
+    <div class="panel hidden" id="genPanel">
+      <h3>2. Truck-wise register banao</h3>
+      <div class="grid4">
+        <label>Date<select id="genDate"></select></label>
+        <label>Tender item<select id="genItem"></select></label>
+        <label>Pehla truck<select id="genStartVeh"></select></label>
+        <label>Tank temp column<select id="genTank"><option value="max">Dono mein zyada</option><option value="t1">Tank Temp 1</option><option value="t2">Tank Temp 2</option></select></label>
+      </div>
+      <div class="row"><button class="btn primary" id="btnGenerate">⚙️ Generate</button><span class="muted" id="genNote"></span></div>
+      <div id="genSummary"></div>
+      <div class="tablewrap"><table class="grid" id="genTable"></table></div>
+      <div class="row"><button class="btn success hidden" id="btnSaveRun">💾 Register mein Save</button></div>
+    </div>
+    <div class="panel">
+      <h3>Saved register</h3>
+      <div class="row">
+        <label>Date se<input type="date" id="viewFrom"></label>
+        <label>Date tak<input type="date" id="viewTo"></label>
+        <button class="btn" id="btnPrintP5">🖨️ Parishisht-5</button>
+        <button class="btn" id="btnPrintP3">🖨️ Parishisht-3</button>
+        <button class="btn" id="btnXlsPlant">⬇️ Excel</button>
+      </div>
+      <div id="savedRuns"></div>
+    </div>
+  </section>
+
+  <!-- BITUMEN -->
+  <section id="tab-bitumen" class="tab">
+    <div class="panel">
+      <h3>Opening balance</h3>
+      <div class="grid4">
+        <label>Date<input type="date" id="obDate"></label>
+        <label>Qty (MT)<input type="number" step="0.001" id="obQty"></label>
+        <div class="end"><button class="btn primary" id="btnSaveOB">Save</button></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Gatepass / Invoice (manual entry)</h3>
+      <div class="grid4" id="gpForm">
+        <label>Plant par aavak date<input type="date" name="recvDate"></label>
+        <label>Invoice date<input type="date" name="invDate"></label>
+        <label>Invoice no.<input name="invNo"></label>
+        <label>Supplier<input name="supplier" placeholder="IOCL / BPCL / HPCL"></label>
+        <label>Tanker no.<input name="tanker" placeholder="GJ06AX6699"></label>
+        <label>Grade<input name="grade" value="VG-30"></label>
+        <label>Qty (MT)<input name="qty" type="number" step="0.001"></label>
+        <div class="end"><button class="btn primary" id="btnAddGP">+ Add</button></div>
+      </div>
+      <p class="muted">Photo se reading ke liye Chat tab mein gatepass ki photo daalo.</p>
+      <div class="tablewrap"><table class="grid" id="gpTable"></table></div>
+    </div>
+    <div class="panel">
+      <h3>Parishisht-1 — Daamar aavak / vaparash</h3>
+      <div class="row">
+        <button class="btn" id="btnPrintP1">🖨️ Print</button>
+        <button class="btn" id="btnXlsP1">⬇️ Excel</button>
+      </div>
+      <div class="tablewrap"><table class="grid" id="ledgerTable"></table></div>
+    </div>
+  </section>
+
+  <!-- VEHICLES -->
+  <section id="tab-vehicles" class="tab">
+    <div class="panel">
+      <h3>Vehicles bulk add</h3>
+      <p class="muted">Har truck ko ek <b>fixed</b> tentative tare aur load capacity milegi (range ke andar, 10 kg round). Asli weighment milte hi edit kar dena.</p>
+      <label>Truck numbers (comma / new line)<textarea id="vehList" rows="3" placeholder="5115, 6116, 7117, 8338"></textarea></label>
+      <div class="grid4">
+        <label>Tare min (kg)<input type="number" id="tareMin" value="12150"></label>
+        <label>Tare max (kg)<input type="number" id="tareMax" value="12350"></label>
+        <label>Net load min (kg)<input type="number" id="netMin" value="26000"></label>
+        <label>Net load max (kg)<input type="number" id="netMax" value="28000"></label>
+      </div>
+      <button class="btn primary" id="btnAddVeh">+ Add vehicles</button>
+    </div>
+    <div class="panel">
+      <h3>Vehicle datasheet</h3>
+      <p class="muted">Order = truck rotation ka kram. ↑↓ se order badlo. Inactive truck generate mein nahi aayega.</p>
+      <div class="tablewrap"><table class="grid" id="vehTable"></table></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="tab-settings" class="tab">
+    <div class="panel">
+      <h3>Kaam ki details</h3>
+      <div class="grid4" id="setForm">
+        <label>Work name<input name="workName"></label>
+        <label>Agency<input name="agency"></label>
+        <label>Plant / location<input name="plant"></label>
+        <label>Division<input name="division"></label>
+        <label>Pehla gate pass no.<input name="gpStart" type="number" value="1"></label>
+        <label>Mix temp min °C<input name="tempMin" type="number" value="140"></label>
+        <label>Mix temp max °C<input name="tempMax" type="number" value="165"></label>
+      </div>
+      <button class="btn primary" id="btnSaveSet">Save</button>
+    </div>
+    <div class="panel">
+      <h3>Tender items (mix type)</h3>
+      <div class="grid4">
+        <label>Item no.<input id="itCode" placeholder="10"></label>
+        <label>Mix<input id="itName" placeholder="BM / DBM / BUSG / SDBC"></label>
+        <label>Design bitumen %<input id="itPct" type="number" step="0.01" placeholder="3.3"></label>
+        <div class="end"><button class="btn primary" id="btnAddItem">+ Add</button></div>
+      </div>
+      <div class="tablewrap"><table class="grid" id="itemTable"></table></div>
+    </div>
+    <div class="panel">
+      <h3>Chatbot (AI) — Gemini API key</h3>
+      <p class="muted">Key sirf isi phone/computer mein save hoti hai, GitHub code mein nahi jaati. Free key: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a></p>
+      <div class="grid4">
+        <label>API key<input id="aiKey" type="password" placeholder="AIza…"></label>
+        <label>Model<input id="aiModel" value="gemini-2.5-flash"></label>
+        <div class="end"><button class="btn primary" id="btnSaveAI">Save</button></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Backup</h3>
+      <p class="muted">Data abhi is device ke browser mein hai. Har hafte backup download karte raho.</p>
+      <div class="row">
+        <button class="btn" id="btnExport">⬇️ Backup download</button>
+        <label class="btn">⬆️ Backup restore<input type="file" id="importFile" accept=".json" hidden></label>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="printArea" class="print-only"></div>
+<div id="toast" class="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
