@@ -23,6 +23,7 @@
   <button data-tab="chat">🤖 Chat</button>
   <button data-tab="plant">🏭 Plant Register</button>
   <button data-tab="bitumen">🛢️ Bitumen</button>
+  <button data-tab="paver">🛣️ Paver Register</button>
   <button data-tab="progress">📊 Progress</button>
   <button data-tab="vehicles">🚚 Vehicles</button>
   <button data-tab="settings">⚙️ Settings</button>
@@ -147,6 +148,21 @@
     </div>
   </section>
 
+  <!-- PAVER REGISTER -->
+  <section id="tab-paver" class="tab">
+    <div class="panel">
+      <h3>Paver Parishisht-1 — Tack coat / spray ke daamar ki nondh</h3>
+      <p class="muted">Jis din tack coat wala item (Settings mein tack coat rate &gt; 0) plant se bana, us din: area = mix jaththo ÷ (density × thickness), daamar = area × rate. Yahi daamar Plant Parishisht-1 ke col 7 (છાંટવા માટે) mein bhi nikalta hai.</p>
+      <div class="row">
+        <label>Date se<input type="date" id="pvFrom"></label>
+        <label>Date tak<input type="date" id="pvTo"></label>
+        <button class="btn" id="pvPrint1">🖨️ Print</button>
+        <button class="btn" id="pvXls1">⬇️ Excel</button>
+      </div>
+      <div class="tablewrap"><table class="grid" id="pvTable1"></table></div>
+    </div>
+  </section>
+
   <!-- PROGRESS (road work tracker: har work ka alag) -->
   <section id="tab-progress" class="tab">
     <div class="panel pg-head" id="pgHead"></div>
@@ -216,6 +232,9 @@
         <label>Item no.<input id="itCode" placeholder="10"></label>
         <label>Mix<input id="itName" placeholder="BM / DBM / BSG / SDBC"></label>
         <label>Design bitumen %<input id="itPct" type="number" step="0.01" placeholder="3.3"></label>
+        <label>Thickness (mm)<input id="itTh" type="number" step="0.5" placeholder="50"></label>
+        <label>Density<input id="itDen" type="number" step="0.05" placeholder="BM 2.2 / SDBC 2.3"></label>
+        <label>Tack coat (kg/sq.m) — estimate se<input id="itTack" type="number" step="0.01" placeholder="0 = tack coat nahi"></label>
         <div class="end"><button class="btn primary" id="btnAddItem">+ Add</button></div>
       </div>
       <div class="tablewrap"><table class="grid" id="itemTable"></table></div>
@@ -249,5 +268,6 @@
 
 <script src="app.js"></script>
 <script src="progress.js"></script>
+<script src="paver.js"></script>
 </body>
 </html>

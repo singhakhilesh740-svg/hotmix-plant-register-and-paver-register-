@@ -127,3 +127,4 @@ tr.warn td{background:#fff6ed}
 .pg-seg{cursor:pointer}.pg-seg:hover{opacity:.8}
 #pgStrip,#pgBars{min-width:640px}
 .pg-cols .grid4 input,.pg-cols .grid4 select,.pg-cols label input{width:100%}
+.reg table.p1{width:99.5%}
