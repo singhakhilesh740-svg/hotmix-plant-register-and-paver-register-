@@ -127,13 +127,13 @@ function renderProgress() {
 }
 
 function pgDrawStrip(s, e) {
-  const P = pgData(), L = P.layers, svg = $('#pgStrip'), W = 1000, X0 = 70, R = 20, top = 26, laneH = 34, gap = 14;
-  const x = m => X0 + (m - s) / (e - s) * (W - X0 - R), H = top + L.length * (laneH + gap) + 26;
+  const P = pgData(), L = P.layers, svg = $('#pgStrip'), W = 1000, X0 = 70, R = 20, laneH = 34, gap = 14;
+  const pts = (P.road.points || []).filter(p => p.at >= s && p.at <= e);
+  const top = pts.length ? 56 : 30, lanesEnd = top + L.length * (laneH + gap) - gap, H = lanesEnd + 92;
+  const x = m => X0 + (m - s) / (e - s) * (W - X0 - R);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   let o = `<defs><pattern id="pgHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ebe9e4"/><line x1="0" y1="0" x2="0" y2="6" stroke="#62686d" stroke-width="1.5" opacity=".5"/></pattern></defs>`;
-  (P.road.ded || []).forEach(d => { const a = x(Math.max(d.from, s)), b = x(Math.min(d.to, e)); if (b > a) o += `<text x="${(a + b) / 2}" y="${top - 10}" text-anchor="middle">${esc(d.short || '')}</text>`; });
-  const step = pgNice(e - s);
-  for (let m = Math.ceil(s / step) * step; m <= e + 0.1; m += step) o += `<line x1="${x(m)}" x2="${x(m)}" y1="${top - 4}" y2="${H - 22}" stroke="#dcdad4"/><text x="${x(m)}" y="${H - 6}" text-anchor="middle">${pgCh(m)}</text>`;
+  (P.road.ded || []).forEach(d => { const a = x(Math.max(d.from, s)), b = x(Math.min(d.to, e)); if (b > a) o += `<text x="${(a + b) / 2}" y="${top - 8}" text-anchor="middle" style="font-weight:600">${esc(d.short || '')}</text>`; });
   L.forEach((l, i) => {
     const y = top + i * (laneH + gap);
     o += `<text class="lbl" x="0" y="${y + laneH / 2 + 5}">${esc(l.t)}</text><rect x="${X0}" y="${y}" width="${W - X0 - R}" height="${laneH}" fill="#ebe9e4" rx="3"/>`;
@@ -144,6 +144,38 @@ function pgDrawStrip(s, e) {
       const yy = r.side === 'RHS' ? y + laneH / 2 : y, hh = r.side === 'Full' ? laneH : laneH / 2;
       o += `<rect class="pg-seg" data-id="${esc(r.id)}" x="${a}" y="${yy}" width="${Math.max(b - a, 1.5)}" height="${hh}" fill="${l.color}"><title>${esc(l.t)} ${r.side}: ${pgCh(a0)} to ${pgCh(b0)} (${pgLen(b0 - a0)})${r.date ? ' · ' + dmy(r.date) : ''}</title></rect>`;
     });
+  });
+  // ---- critical points: jahan kuch shuru / khatam hota hai
+  const crit = new Map();   // m -> priority (3 user point, 2 road/ded/estimate, 1 stretch)
+  const add = (m, pr) => { if (m == null || isNaN(m) || m < s - 0.5 || m > e + 0.5) return; m = Math.round(m);
+    for (const k of crit.keys()) if (Math.abs(k - m) <= 3) { crit.set(k, Math.max(crit.get(k), pr)); return; } crit.set(m, pr); };
+  add(s, 2); add(e, 2);
+  pts.forEach(p => add(p.at, 3));
+  (P.road.ded || []).forEach(d => { add(d.from, 2); add(d.to, 2); });
+  L.forEach(l => (l.est?.ch || []).forEach(([a, b]) => { add(a, 2); add(b, 2); }));
+  P.stretches.forEach(r => { add(r.from, 1); add(r.to, 1); });
+  const list = [...crit.entries()].sort((a, b) => a[0] - b[0]);
+  // lines har point par; label: paas-paas (11 px se kam) points ek group mein "0+380–0+400"
+  list.forEach(([m, pr]) => {
+    const xx = x(m);
+    o += `<line x1="${xx}" x2="${xx}" y1="${top - 4}" y2="${lanesEnd + 4}" stroke="${pr === 3 ? '#b42318' : '#1f2326'}" stroke-opacity="${pr === 3 ? .8 : pr === 2 ? .35 : .22}" stroke-width="${pr === 3 ? 1.4 : 1}" stroke-dasharray="${pr === 1 ? '2 3' : pr === 2 ? '4 3' : ''}"><title>${pgCh(m)}</title></line>`;
+  });
+  const groups = [];
+  list.forEach(([m, pr]) => { const g = groups[groups.length - 1]; if (g && x(m) - x(g.ms[g.ms.length - 1]) < 11) { g.ms.push(m); g.pr = Math.max(g.pr, pr); } else groups.push({ ms: [m], pr }); });
+  // group ke label bhi aapas mein 11 px door hone chahiye; zaroori wale pehle
+  const place = []; 
+  [3, 2, 1].forEach(pr => groups.filter(g => g.pr === pr).forEach(g => {
+    const cx = (x(g.ms[0]) + x(g.ms[g.ms.length - 1])) / 2;
+    if (place.every(q => Math.abs(q.cx - cx) >= 11)) place.push({ ...g, cx });
+  }));
+  place.forEach(g => {
+    const txt = g.ms.length === 1 ? pgCh(g.ms[0]) : `${pgCh(g.ms[0])}–${pgCh(g.ms[g.ms.length - 1])}`, y0 = lanesEnd + 12;
+    o += `<text x="${g.cx}" y="${y0}" transform="rotate(-55 ${g.cx} ${y0})" text-anchor="end" style="font-size:10px;${g.pr === 1 ? '' : 'font-weight:600;fill:#1f2326'}"><title>${g.ms.map(pgCh).join(', ')}</title>${txt}</text>`;
+  });
+  // naam wale points upar (2 line mein, taaki takraye nahi)
+  pts.sort((a, b) => a.at - b.at).forEach((p, i) => {
+    const xx = x(p.at), y = i % 2 ? 14 : 28, anc = xx > W - 90 ? 'end' : xx < X0 + 60 ? 'start' : 'middle';
+    o += `<text x="${xx}" y="${y}" text-anchor="${anc}" style="font-size:10.5px;font-weight:600;fill:#b42318">${esc(p.label)}</text>`;
   });
   if (!P.stretches.length) o += `<text x="${W / 2}" y="${top + L.length / 2 * (laneH + gap)}" text-anchor="middle" style="font-size:13px">Abhi koi stretch nahi. Neeche se pehla add karo.</text>`;
   svg.innerHTML = o;
@@ -207,6 +239,7 @@ function pgDrawSetup() {
       <label>Carriageway width (m)<input id="pgRCw" type="number" step="0.1" value="${r.cw || 5.5}"></label>
     </div>
     <label>Estimate mein nahi (har line: from-to naam chhota-naam)<textarea id="pgRDed" rows="2" placeholder="0+380-0+400 NH passed road part | NH">${esc((r.ded || []).map(d => `${pgCh(d.from)}-${pgCh(d.to)} ${d.label} | ${d.short || ''}`).join('\n'))}</textarea></label>
+    <label>Junction / important points (har line: chainage naam)<textarea id="pgRPts" rows="2" placeholder="2+100 Rampura junction">${esc((r.points || []).map(p => `${pgCh(p.at)} ${p.label}`).join('\n'))}</textarea></label>
     <label>Estimate details (har line: heading: value)<textarea id="pgRFacts" rows="3" placeholder="TS amount: ₹ 4,95,43,000">${esc((r.facts || []).map(([k, v]) => `${k}: ${v}`).join('\n'))}</textarea></label>
     <h4 style="margin:10px 0 4px">Layers / treatments</h4>
     <div class="tablewrap"><table class="grid" id="pgLayerTbl"><thead><tr><th>Code</th><th>Naam</th><th>Thick (mm)</th><th>Density</th><th>Rang</th><th>Neeche layer</th><th>Est. length (m)</th><th>Est. MT</th><th>Rate/MT</th><th>Est. chainage</th><th></th></tr></thead><tbody>
@@ -232,6 +265,12 @@ function pgSaveSetup() {
     if (!m || isNaN(a) || isNaN(b)) return toast('Is line ka format galat: ' + line);
     ded.push({ from: Math.min(a, b), to: Math.max(a, b), label: m[3].trim(), short: m[4].trim() });
   }
+  const points = [];
+  for (const line of $('#pgRPts').value.split('\n').map(x => x.trim()).filter(Boolean)) {
+    const m = line.match(/^(\S+)\s+(.+)$/), a = m && pgParse(m[1]);
+    if (!m || isNaN(a)) return toast('Point ka format galat: ' + line + ' (jaise 2+100 Rampura junction)');
+    points.push({ at: a, label: m[2].trim() });
+  }
   const facts = $('#pgRFacts').value.split('\n').map(x => x.trim()).filter(Boolean).map(x => { const i = x.indexOf(':'); return i > 0 ? [x.slice(0, i).trim(), x.slice(i + 1).trim()] : [x, '']; });
   const layers = [];
   for (const tr of $$('#pgLayerTbl tbody tr')) {
@@ -249,7 +288,7 @@ function pgSaveSetup() {
       below: g('below').toUpperCase() || null, est: len ? { len, mt, rate, amt: mt && rate ? +(mt * rate).toFixed(2) : (old?.est?.amt || 0), ch } : null });
   }
   if (!layers.length) return toast('Kam se kam ek layer chahiye');
-  Object.assign(r, { name: $('#pgRName').value.trim(), agency: $('#pgRAgency').value.trim(), start: st, end: en, cw: +$('#pgRCw').value || 5.5, ded, facts });
+  Object.assign(r, { name: $('#pgRName').value.trim(), agency: $('#pgRAgency').value.trim(), start: st, end: en, cw: +$('#pgRCw').value || 5.5, ded, facts, points });
   // layer code badla to stretches mein bhi
   P.layers.forEach((l, i) => { const n = layers[i]; if (n && n.t !== l.t) P.stretches.forEach(s => { if (s.t === l.t) s.t = n.t; }); });
   P.layers = layers; save(); renderProgress(); toast('Setup save hua');
