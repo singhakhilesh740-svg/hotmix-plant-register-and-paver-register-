@@ -6,7 +6,7 @@
 const KEY = 'hmp_register_v1';
 const AIKEY = 'hmp_ai_v1';
 const DEF = () => ({
-  settings: { workName: '', agency: '', plant: '', division: '', gpStart: 1, gpBook: '', gpLeaf: 1, gpPerBook: 50, tempMin: 140, tempMax: 165, diffMin: 0.7, diffMax: 1.1, mixCorr: 0, tankCorr: 0 },
+  settings: { workName: '', agency: '', plant: '', division: '', gpStart: 1, gpBook: '', gpLeaf: 1, gpPerBook: 50, tempMin: 140, tempMax: 165, diffMin: 0.7, diffMax: 1.1, mixCorr: 0, tankCorr: 0, travelMin: 30, paverMinT: 130 },
   items: [],
   vehicles: [],
   opening: null,            // {date, qty}
@@ -16,6 +16,9 @@ const DEF = () => ({
   dayTare: {},              // {date: {veh: kg}} — one tare per truck per day
   p1: {},                   // Parishisht-1 manual cols per date: {chain, waste, reason, remark}
   pv1: {},                  // Paver Parishisht-1 manual cols per date: {khatu, chain, kul, remark}
+  pv2: {},                  // Paver Parishisht-2 per truck: {tb, tm, remark}
+  pv2upto: '',              // Progress kis date tak poora hai (user ne confirm kiya)
+  pv4: {},                  // Paver Parishisht-4 per truck: {l, c, r, remark}
   chat: []
 });
 // STORE = { works: {id: workData}, current: id }  — har kaam ka alag data
@@ -229,17 +232,31 @@ function generateTrucks(day, opts) {
   } else {
     let base = 0, from = 0;
     const secs = t => { const [h, m, s] = t.split(':').map(Number); return h * 3600 + m * 60 + (s || 0); };
-    let cap = tripTarget(active[vi % active.length]);
+    // Lead time niyam: truck plant se nikla to 2 × lead time ke baad hi wapas bharega
+    const lead = (+DB.settings.travelMin || 0) * 60, busy = opts.busy || {};
+    let short = false;
+    const pick = startSec => {
+      for (let k = 0; k < active.length; k++) {
+        const idx = (vi + k) % active.length, v = active[idx];
+        if (busy[v.no] == null || busy[v.no] + 2 * lead <= startSec) { vi = idx; return v; }
+      }
+      // koi truck wapas nahi aaya: jo sabse pehle aayega wahi (remark mein note)
+      short = true;
+      const v = [...active].sort((a, b) => (busy[a.no] ?? -1e9) - (busy[b.no] ?? -1e9))[0];
+      vi = active.indexOf(v); return v;
+    };
+    let curV = pick(secs(rs[0].time)), curShort = short, cap = tripTarget(curV);
     for (let i = 0; i < rs.length; i++) {
-      const v = active[vi % active.length];
       if (rs[i].cum - base >= cap) {
-        push(from, i, (rs[i].cum - base) * 1000, v);
-        base = rs[i].cum; from = i + 1; vi++;
-        cap = tripTarget(active[vi % active.length]);
+        push(from, i, (rs[i].cum - base) * 1000, curV);
+        if (curShort) trucks[trucks.length - 1].remark = 'Truck kam — 2× lead time se pehle wapas';
+        busy[curV.no] = secs(rs[i].time);
+        base = rs[i].cum; from = i + 1; vi = (vi + 1) % active.length;
+        short = false; curV = pick(secs(rs[i].time)); curShort = short; cap = tripTarget(curV);
       }
     }
     const rem = (rs[rs.length - 1].cum - base) * 1000;
-    if (rem >= 100) push(from, rs.length - 1, rem, active[vi % active.length]);   // last truck = partial
+    if (rem >= 100) { push(from, rs.length - 1, rem, curV); busy[curV.no] = secs(rs[rs.length - 1].time); if (curShort) trucks[trucks.length - 1].remark = 'Truck kam — 2× lead time se pehle wapas'; }   // last truck = partial
     // note plant stoppages (>10 min) inside a truck's loading time
     let ti = 0, fromIdx = 0;
     trucks.forEach(t => {
@@ -424,13 +441,14 @@ function generateDays(days) {
   const already = parts.filter(p => DB.runs.some(r => sameRun(r, p, SC.file)));
   let replace = true;
   if (already.length) replace = confirm(`${[...new Set(already.map(p => dmy(p.date)))].join(', ')} ka register pehle se saved hai.\n\nOK = dobara bana kar replace karo\nCancel = unhe chhod do, baaki banao`);
-  const done = [];
+  const done = [], busyByDate = {};
   try {
     parts.forEach(p => {
       const olds = DB.runs.filter(r => sameRun(r, p, SC.file));
       if (olds.length && !replace) { done.push({ date: p.date, mix: p.mix, n: '—', scada: p.totalT, reg: olds.reduce((a, r) => a + regTotal(r), 0), gp: 'pehle se saved (chhoda)' }); return; }
       DB.runs = DB.runs.filter(r => !olds.includes(r));
-      const trucks = generateTrucks(p, { startVeh, tank, useTripper: true });
+      busyByDate[p.date] = busyByDate[p.date] || {};
+      const trucks = generateTrucks(p, { startVeh, tank, useTripper: true, busy: busyByDate[p.date] });
       const run = makeRun(p, trucks, olds[0]?.id);
       numberFrom(trucks, 0, startGPFor(run)); DB.runs.push(run);
       const last = trucks[trucks.length - 1]?.veh; const i = act.findIndex(v => v.no === last);
@@ -1008,11 +1026,12 @@ async function handleChatFile(f) {
   appendMsg('user', isPdf ? `📄 ${esc(f.name)}` : `<img src="${dataUrl}">`);
   DB.chat.push({ role: 'user', html: `📷 ${esc(f.name)}`, t: Date.now() }); save();
   if (!cfg.key) return chatPush('bot', 'Photo padhne ke liye Settings → Chatbot mein Claude (ya Gemini) API key daalo. Tab tak Bitumen tab mein manual entry kar sakte ho.');
-  const wait = appendMsg('bot', '…photo padh raha hoon');
+  const wait = appendMsg('bot', '…file padh raha hoon (estimate ho to thoda samay lagega)');
   try {
     const b64 = dataUrl.split(',')[1]; const mime = dataUrl.slice(5, dataUrl.indexOf(';'));
     const prompt = `This is a photo of a document at an Indian hot mix plant. Classify and extract. Return ONLY JSON:
-{"doc_type":"gatepass"|"vehicle_tare"|"scada"|"other",
+{"doc_type":"gatepass"|"vehicle_tare"|"estimate"|"scada"|"other",
+ "items":[{"item_no":"","name":"short mix name e.g. BM, SDBC, DBM, BSG, BC","thickness_mm":number,"qty_mt":number,"bitumen_pct":number,"tack_kg_sqm":number,"density":number}]  (only for estimate: road work estimate / abstract / rate analysis. For each bituminous item: compacted thickness, total quantity in MT (convert cum x density if needed), bitumen content % by weight of mix, and tack coat bitumen rate in kg per sqm if the item includes tack coat else 0. Use null when not found),
  "vehicles":[{"vehicle_no":"e.g. GJ20V5115, no spaces","tare_kg":number}]  (only for vehicle_tare: weighbridge slip, RC book unladen weight, or a handwritten/printed list of trucks with tare/empty weight. Convert tonnes to kg),
  "supplier":"IOCL/BPCL/HPCL/other name",
  "invoice_no":"tax invoice number (e.g. GJ5534275388 or 4541387410)",
@@ -1029,6 +1048,7 @@ async function handleChatFile(f) {
     let j; try { j = JSON.parse(txt.replace(/```json|```/g, '').trim()); } catch (e) { throw new Error('AI ka jawab samajh nahi aaya: ' + txt.slice(0, 200)); }
     if (j.doc_type === 'scada') return chatPush('bot', 'Ye SCADA report lag rahi hai. Photo se truck-wise register sahi nahi banta — SCADA ki Excel file (DRUM_MIX_….xlsx) upload karo.');
     if (j.doc_type === 'vehicle_tare') return showVehicleConfirm(j);
+    if (j.doc_type === 'estimate') return showEstimateConfirm(j);
     showGatepassConfirm(j);
   } catch (err) { wait.remove(); chatPush('bot', 'AI error: ' + esc(err.message)); }
 }
@@ -1091,6 +1111,34 @@ function showVehicleConfirm(j) {
   };
   appendMsg('bot', '', box);
 }
+function showEstimateConfirm(j) {
+  const list = (j.items || []).filter(x => x && x.name);
+  if (!list.length) return chatPush('bot', 'Estimate mein bituminous item nahi mile. Saaf page (abstract / rate analysis) ki photo ya PDF daalo.');
+  const box = document.createElement('div'); box.className = 'confirm';
+  const cell = (k, n, v, w = 70) => `<input data-k="${k}" data-n="${n}" value="${esc(v ?? '')}" style="width:${w}px">`;
+  box.innerHTML = `<b>Estimate se items</b> <span class="pill ai">AI · ${esc(j.confidence || '?')}</span> — check karke Save dabao (Settings → Tender items mein jayega)
+    <div class="tablewrap"><table class="grid"><thead><tr><th>Item no.</th><th>Mix</th><th>Thickness mm</th><th>Qty MT</th><th>Bitumen %</th><th>Tack coat kg/sq.m</th><th>Density</th></tr></thead><tbody>
+    ${list.map((x, k) => `<tr><td>${cell(k, 'code', x.item_no, 60)}</td><td>${cell(k, 'name', String(x.name).toUpperCase(), 70)}</td><td>${cell(k, 'th', x.thickness_mm, 60)}</td>
+      <td>${cell(k, 'qty', x.qty_mt, 80)}</td><td>${cell(k, 'pct', x.bitumen_pct, 60)}</td><td>${cell(k, 'tack', x.tack_kg_sqm, 60)}</td><td>${cell(k, 'den', x.density, 55)}</td></tr>`).join('')}
+    </tbody></table></div>${j.notes ? `<div class="muted">Note: ${esc(j.notes)}</div>` : ''}
+    <div class="row"><button class="btn success">✅ Settings mein save karo</button></div>`;
+  box.querySelector('button').onclick = () => {
+    let add = 0, upd = 0;
+    list.forEach((_, k) => {
+      const g = n => box.querySelector(`[data-k="${k}"][data-n="${n}"]`).value.trim();
+      const name = g('name').toUpperCase(); if (!name) return;
+      let it = DB.items.find(i => i.name.toUpperCase() === name) || (g('code') && DB.items.find(i => i.code == g('code')));
+      if (!it) { it = { code: g('code') || String(DB.items.length + 1), name, pct: 0 }; DB.items.push(it); add++; } else upd++;
+      it.name = name;
+      if (g('pct')) it.pct = +g('pct'); if (g('th')) it.th = +g('th'); if (g('qty')) it.estQty = +g('qty');
+      if (g('tack') !== '') it.tack = +g('tack'); if (g('den')) it.den = +g('den');
+    });
+    save(); renderAll();
+    box.innerHTML = `✅ Settings mein ${add} naye, ${upd} update`;
+    chatPush('bot', `Estimate ke items Settings mein save hue (${add} naye, ${upd} update). Settings → Tender items mein ek baar check kar lo.`);
+  };
+  appendMsg('bot', '', box);
+}
 function showGatepassConfirm(j) {
   const box = document.createElement('div'); box.className = 'confirm';
   const v = { recvDate: j.received_date || j.invoice_date || '', invDate: j.invoice_date || '', invNo: j.invoice_no || '', supplier: j.supplier || '', tanker: normVeh(j.tanker_no), gpNo: j.gatepass_no || '', grade: j.grade || 'VG-30', qty: j.qty_mt ?? '' };
@@ -1133,7 +1181,7 @@ async function claude(text, file, json) {
       'content-type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true'
     },
-    body: JSON.stringify({ model: cfg.model || 'claude-sonnet-5-5', max_tokens: 1500, messages: [{ role: 'user', content }] })
+    body: JSON.stringify({ model: cfg.model || 'claude-sonnet-5-5', max_tokens: 4000, messages: [{ role: 'user', content }] })
   });
   const d = await r.json();
   if (!r.ok) throw new Error(d.error?.message || ('HTTP ' + r.status));

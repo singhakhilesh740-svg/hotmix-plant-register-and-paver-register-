@@ -161,6 +161,36 @@
       </div>
       <div class="tablewrap"><table class="grid" id="pvTable1"></table></div>
     </div>
+    <div class="panel">
+      <h3>Paver Parishisht-2 — Tack coat daamar aur mishran ka temperature (truck-wise)</h3>
+      <div id="pv2Gate"></div>
+      <div id="pv2Body" class="hidden">
+        <div id="pv2Sum"></div>
+        <div class="row">
+          <label>Date se<input type="date" id="pv2From"></label>
+          <label>Date tak<input type="date" id="pv2To"></label>
+          <label>Plant se site tak samay (min)<input type="number" id="pv2Travel" style="width:90px"></label>
+          <button class="btn" id="pv2Print">🖨️ Print</button>
+          <button class="btn" id="pv2Xls">⬇️ Excel</button>
+        </div>
+        <p class="muted">Chainage: Progress ke area ÷ plant ke tonnage = sq.m/T; truck ka net × sq.m/T ÷ (width/2) = lambai. Pehle LHS shuru se aakhir tak, phir RHS shuru se. Temperature site par naapa hua daalo (130°C se kam par laal).</p>
+        <div class="tablewrap"><table class="grid" id="pv2Table"></table></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Paver Parishisht-4 — Daamar, kapchi, mishran vaparash (truck-wise)</h3>
+      <div id="pv4Gate" class="muted">Pehle upar Parishisht-2 mein Progress ki date confirm karo.</div>
+      <div id="pv4Body" class="hidden">
+        <div class="row">
+          <label>Date se<input type="date" id="pv4From"></label>
+          <label>Date tak<input type="date" id="pv4To"></label>
+          <button class="btn" id="pv4Print">🖨️ Print</button>
+          <button class="btn" id="pv4Xls">⬇️ Excel</button>
+        </div>
+        <p class="muted">Samay = plant + lead time. Area = truck ki lambai × lane width. Sarasari moti: L/C/R daaloge to unka average; khali ho to mishran ÷ (area × density) se nikla (calc). Niyat moti se kam par laal.</p>
+        <div class="tablewrap"><table class="grid" id="pv4Table"></table></div>
+      </div>
+    </div>
   </section>
 
   <!-- PROGRESS (road work tracker: har work ka alag) -->
@@ -219,6 +249,7 @@
         <label>Mix temp max °C<input name="tempMax" type="number" value="165"></label>
         <label>Register SCADA se kam: min %<input name="diffMin" type="number" step="0.1" value="0.7"></label>
         <label>Register SCADA se kam: max %<input name="diffMax" type="number" step="0.1" value="1.1"></label>
+        <label>Lead time — plant se site (min)<input name="travelMin" type="number" value="30" title="Truck 2× lead time ke baad hi dobara bharega; paver par samay = plant + lead"></label>
         <label>Mix temp correction (+°C)<input name="mixCorr" type="number" step="1" value="0" title="SCADA sensor kam padhta ho to — saari readings par lagega"></label>
         <label>Tank temp correction (+°C)<input name="tankCorr" type="number" step="1" value="0"></label>
       </div>
