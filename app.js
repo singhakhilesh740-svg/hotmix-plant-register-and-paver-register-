@@ -6,7 +6,7 @@
 const KEY = 'hmp_register_v1';
 const AIKEY = 'hmp_ai_v1';
 const DEF = () => ({
-  settings: { workName: '', agency: '', plant: '', division: '', gpStart: 1, tempMin: 140, tempMax: 165, diffMin: 0.7, diffMax: 1.1 },
+  settings: { workName: '', agency: '', plant: '', division: '', gpStart: 1, gpBook: '', gpLeaf: 1, gpPerBook: 50, tempMin: 140, tempMax: 165, diffMin: 0.7, diffMax: 1.1 },
   items: [],
   vehicles: [],
   opening: null,            // {date, qty}
@@ -253,10 +253,26 @@ function setFlags(t) {
   t.flags = f;
 }
 const regTotal = r => r.trucks.reduce((a, t) => a + (+t.net || 0), 0) / 1000;
-function nextGatePass(excludeRunId) {
-  let mx = (+DB.settings.gpStart || 1) - 1;
-  DB.runs.forEach(r => { if (r.id !== excludeRunId) r.trucks.forEach(t => { if (+t.gp > mx) mx = +t.gp; }); });
-  return mx + 1;
+// ---- Gate pass: "book/leaf" (1790/1 … 1790/50 -> 1791/1). Book khatam hone par agla book +1 (edit kar sakte ho)
+function parseGP(g) { const m = String(g ?? '').trim().match(/^(\d+)\s*\/\s*(\d+)$/); return m ? { book: +m[1], leaf: +m[2] } : (/^\d+$/.test(String(g ?? '').trim()) ? { num: +g } : null); }
+function nextGP(g) {
+  const p = parseGP(g); if (!p) return firstGP();
+  if (p.num != null) return String(p.num + 1);
+  const per = +DB.settings.gpPerBook || 50;
+  return p.leaf >= per ? `${p.book + 1}/1` : `${p.book}/${p.leaf + 1}`;
+}
+function firstGP() { const s = DB.settings; return s.gpBook ? `${+s.gpBook}/${+s.gpLeaf || 1}` : String(+s.gpStart || 1); }
+const runKey = r => r.date + ' ' + (r.start || '');
+function startGPFor(run) {   // is run se pehle wale aakhri truck ka agla no.
+  const prev = DB.runs.filter(r => r.id !== run.id && runKey(r) < runKey(run) && r.trucks.length).sort((a, b) => runKey(a).localeCompare(runKey(b))).pop();
+  return prev ? nextGP(prev.trucks[prev.trucks.length - 1].gp) : firstGP();
+}
+function numberFrom(trucks, from, gp) { for (let i = from; i < trucks.length; i++) { trucks[i].gp = gp; gp = nextGP(gp); } return gp; }
+// is run ke baad wale saved runs ka numbering aage badhao
+function cascadeGP(run) {
+  let gp = nextGP(run.trucks[run.trucks.length - 1]?.gp);
+  DB.runs.filter(r => r.id !== run.id && runKey(r) > runKey(run)).sort((a, b) => runKey(a).localeCompare(runKey(b)))
+    .forEach(r => { gp = numberFrom(r.trucks, 0, gp); });
 }
 function lastVehicleUsed() {
   const runs = [...DB.runs].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
@@ -305,8 +321,6 @@ $('#btnGenerate').addEventListener('click', () => {
   const day = SC.days.find(d => d.date === $('#genDate').value);
   try {
     const trucks = generateTrucks(day, { startVeh: $('#genStartVeh').value, tank: $('#genTank').value, useTripper: true });
-    let gp = nextGatePass();
-    trucks.forEach(t => t.gp = gp++);
     const item = $('#genItem').value;
     const existing = DB.runs.find(r => r.date === day.date && r.file === SC.file);
     DRAFT = {
@@ -314,7 +328,7 @@ $('#btnGenerate').addEventListener('click', () => {
       start: day.start, end: day.end, totalT: day.totalT, bitKg: day.bitKg, bitPctSet: day.bitPctSet,
       work: SC.meta.work, trucks, src: day.hasTripper ? 'tripper' : 'cumulative'
     };
-    if (existing) { let g = nextGatePass(existing.id); DRAFT.trucks.forEach(t => t.gp = g++); }
+    numberFrom(DRAFT.trucks, 0, startGPFor(DRAFT));
     renderDraft();
     if (existing) toast('Is date/file ka register pehle se saved hai — Save karne par replace hoga.');
   } catch (err) { toast(err.message); }
@@ -334,10 +348,10 @@ function generateAllDays() {
       const old = DB.runs.find(r => r.date === day.date && r.file === SC.file);
       if (old) DB.runs = DB.runs.filter(r => r !== old);
       const trucks = generateTrucks(day, { startVeh, tank, useTripper: true });
-      let gp = nextGatePass(); trucks.forEach(t => t.gp = gp++);
-      DB.runs.push({ id: old?.id || uid(), date: day.date, file: SC.file, mix: SC.meta.mix, item,
+      const newRun = { id: old?.id || uid(), date: day.date, file: SC.file, mix: SC.meta.mix, item,
         start: day.start, end: day.end, totalT: day.totalT, bitKg: day.bitKg, bitPctSet: day.bitPctSet,
-        work: SC.meta.work, trucks, src: day.hasTripper ? 'tripper' : 'cumulative' });
+        work: SC.meta.work, trucks, src: day.hasTripper ? 'tripper' : 'cumulative' };
+      numberFrom(trucks, 0, startGPFor(newRun)); DB.runs.push(newRun);
       const last = trucks[trucks.length - 1]?.veh; const i = act.findIndex(v => v.no === last);
       if (i >= 0) startVeh = act[(i + 1) % act.length].no;
       done.push({ date: day.date, n: trucks.length, scada: day.totalT, reg: trucks.reduce((a, t) => a + t.net, 0) / 1000, gp: trucks.length ? `${trucks[0].gp}–${trucks[trucks.length - 1].gp}` : '' });
@@ -364,7 +378,7 @@ function renderDraft() {
   $('#genTable').innerHTML = `<thead><tr><th>#</th><th>Truck</th><th>Samay</th><th>Gate pass</th><th>Gross (kg)</th><th>Net (kg)</th><th>Tare (kg)</th><th>Cum. (MT)</th><th>Agg. temp</th><th>Tank temp</th><th>Mix temp</th><th>Remark</th></tr></thead><tbody>` +
     d.trucks.map((t, i) => `<tr class="${t.flags?.length ? 'warn' : ''}"><td>${i + 1}</td>
       <td><select data-i="${i}" data-f="veh">${vehOpts(t.veh)}</select></td>
-      <td>${t.time}</td><td>${t.gp}</td><td>${t.gross}</td><td><b>${t.net}</b></td><td><input data-i="${i}" data-f="tare" type="number" step="10" value="${t.tare}" style="width:80px"></td><td>${f2(t.regCum ?? t.cum)}</td>
+      <td>${t.time}</td><td><input data-i="${i}" data-f="gp" value="${esc(t.gp)}" style="width:80px"></td><td>${t.gross}</td><td><b>${t.net}</b></td><td><input data-i="${i}" data-f="tare" type="number" step="10" value="${t.tare}" style="width:80px"></td><td>${f2(t.regCum ?? t.cum)}</td>
       <td><input data-i="${i}" data-f="aggT" value="${esc(t.aggT)}" placeholder="manual" style="width:70px"></td>
       <td><input data-i="${i}" data-f="tankT" type="number" value="${esc(t.tankT)}" style="width:62px"></td>
       <td><input data-i="${i}" data-f="mixT" type="number" value="${esc(t.mixT)}" style="width:62px"></td>
@@ -379,13 +393,20 @@ $('#genTable').addEventListener('change', e => {
     const v = r10(+el.value || 0); DB.dayTare[DRAFT.date] = DB.dayTare[DRAFT.date] || {}; DB.dayTare[DRAFT.date][t.veh] = v;
     DRAFT.trucks.forEach(x => { if (x.veh === t.veh) { x.tare = v; x.gross = x.net + v; } }); save(); renderDraft();
   }
+  else if (f === 'gp') {
+    if (!parseGP(el.value)) { toast('Gate pass aise likho: 1790/1'); el.value = t.gp; return; }
+    numberFrom(DRAFT.trucks, i, el.value.replace(/\s/g, '')); renderDraft();
+  }
   else if (f === 'mixT' || f === 'tankT') { t[f] = el.value === '' ? '' : +el.value; setFlags(t); renderDraft(); }
   else t[f] = el.value;
 });
 $('#btnSaveRun').addEventListener('click', () => {
   if (!DRAFT) return;
   DB.runs = DB.runs.filter(r => r.id !== DRAFT.id);
-  DB.runs.push(DRAFT); save();   // dayTare already stored
+  DB.runs.push(DRAFT);
+  const later = DB.runs.filter(r => r.id !== DRAFT.id && runKey(r) > runKey(DRAFT)).length;
+  if (later && confirm(`Aage ke ${later} saved din ke gate pass no. bhi is hisaab se aage badha dein?`)) cascadeGP(DRAFT);
+  save();
   toast(`${dmy(DRAFT.date)} ka register save hua (${DRAFT.trucks.length} trucks)`);
   DRAFT = null; $('#genTable').innerHTML = ''; $('#genSummary').innerHTML = ''; $('#btnSaveRun').classList.add('hidden');
   renderAll();
@@ -651,7 +672,13 @@ function renderSettings() {
   const a = aiCfg(); $('#aiProvider').value = a.provider || 'claude'; $('#aiKey').value = a.key || ''; $('#aiModel').value = a.model || defModel(a.provider || 'claude');
 }
 $('#btnSaveSet').addEventListener('click', () => {
+  const oldFirst = firstGP(), oldPer = DB.settings.gpPerBook;
   $$('#setForm [name]').forEach(i => DB.settings[i.name] = i.type === 'number' ? +i.value : i.value.trim());
+  if ((firstGP() !== oldFirst || DB.settings.gpPerBook !== oldPer) && DB.runs.length &&
+      confirm(`Gate pass shuru ${firstGP()} se. Saare saved register ke gate pass no. dobara lagayein?`)) {
+    let gp = firstGP();
+    [...DB.runs].sort((a, b) => runKey(a).localeCompare(runKey(b))).forEach(r => { gp = numberFrom(r.trucks, 0, gp); });
+  }
   save(); toast('Settings save hui'); renderAll();
 });
 $('#btnAddItem').addEventListener('click', () => {
