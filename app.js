@@ -234,6 +234,22 @@ function generateTrucks(day, opts) {
       }
       fromIdx = endIdx + 1;
     });
+    // Aakhri partial truck apni capacity ke 50% se kam ho to wo maal baaki trucks mein baant do
+    const L = trucks[trucks.length - 1];
+    if (rem >= 100 && L && trucks.length > 1) {
+      const lv = DB.vehicles.find(v => v.no === L.veh);
+      const cap = +(lv?.cap) || netFromTare(lv?.tare);
+      if (L.net < cap * 0.5) {
+        trucks.pop();
+        const rest = trucks, n = rest.length;
+        const each = Math.floor(L.net / n / 10) * 10;
+        rest.forEach(t => { t.net += each; });
+        rest[n - 1].net += L.net - each * n;          // bacha hua (10 kg tak) aakhri truck mein
+        rest.forEach(t => { t.gross = t.net + t.tare; });
+        const last = rest[n - 1]; last.time = L.time; last.cum = L.cum;   // aakhri truck din ke ant mein nikla
+        if (L.remark) last.remark = (last.remark ? last.remark + ', ' : '') + L.remark;
+      }
+    }
   }
   // Register total SCADA se thoda kam (practical weighbridge vs SCADA farak) — kabhi zyada nahi
   const dMin = (+DB.settings.diffMin || 0) / 100, dMax = (+DB.settings.diffMax || 0) / 100;
