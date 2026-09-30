@@ -27,6 +27,10 @@ function load() {
   else if (d.runs || d.settings) { const id = uid(); STORE = { works: { [id]: d }, current: id }; }   // purana data -> pehla work
   else STORE = { works: {}, current: null };
   Object.keys(STORE.works).forEach(k => STORE.works[k] = fixWork(STORE.works[k]));
+  Object.values(STORE.works).forEach(w => {   // BUSG ka naam ab BSG
+    w.items.forEach(i => { if (/^BUSG$/i.test(i.name)) i.name = 'BSG'; });
+    w.runs.forEach(r => { if (/^BUSG$/i.test(r.mix || '')) r.mix = 'BSG'; });
+  });
   if (!STORE.works[STORE.current]) STORE.current = Object.keys(STORE.works)[0] || null;
   if (!STORE.current) { const id = uid(); STORE.works[id] = fixWork({ settings: { workName: 'Work 1' } }); STORE.current = id; }
   DB = STORE.works[STORE.current];
@@ -318,9 +322,46 @@ async function readScadaFile(file) {
   res.file = file.name;
   return res;
 }
+// ---- Item (mix) pehchaan: SCADA ke Bitumen % set-point ko Settings ke item % se milao
+// Chhote tweaks (15 min ya 10 T se kam) ignore; asli mix badle to din ke hisse alag register banenge
+function splitByItem(day, forced) {
+  const items = DB.items.filter(i => +i.pct > 0);
+  const mk = (rows, item, pc, pb) => {
+    const rs = rows.map(r => Object.assign({}, r, { cum: +(r.cum - pc).toFixed(3), cumBit: r.cumBit - pb }));
+    const last = rs[rs.length - 1], bp = rs.filter(r => r.tph > 0).map(r => r.bitPct);
+    return { date: day.date, rows: rs, totalT: last.cum, bitKg: last.cumBit, start: rs[0].time, end: last.time,
+      bitPctSet: bp.length ? median(bp) : 0, hasTripper: rs.some(r => r.trip !== ''),
+      item: item ? item.code : '', mix: item ? item.name : (SC?.meta.mix || '') };
+  };
+  if (forced && forced !== 'auto') return [mk(day.rows, DB.items.find(i => i.code == forced), 0, 0)];
+  if (!items.length) return [mk(day.rows, null, 0, 0)];
+  const near = p => items.reduce((b, i) => Math.abs(i.pct - p) < Math.abs(b.pct - p) ? i : b);
+  let lab = null;
+  const labels = day.rows.map(r => { if (r.tph > 0 && r.bitPct > 0) lab = near(r.bitPct).code; return lab; });
+  const firstLab = labels.find(x => x) || items[0].code;
+  for (let k = 0; k < labels.length && !labels[k]; k++) labels[k] = firstLab;
+  let segs = [];
+  labels.forEach((l, k) => { const g = segs[segs.length - 1]; if (g && g.code === l) g.to = k; else segs.push({ code: l, from: k, to: k }); });
+  const sec = t => { const [h, m, x] = t.split(':').map(Number); return h * 3600 + m * 60 + (x || 0); };
+  const R = day.rows;
+  const ton = g => R[g.to].cum - (g.from ? R[g.from - 1].cum : 0), dur = g => sec(R[g.to].time) - sec(R[g.from].time);
+  const joinSame = a => a.reduce((o, g) => { const p = o[o.length - 1]; if (p && p.code === g.code) p.to = g.to; else o.push({ ...g }); return o; }, []);
+  segs = joinSame(segs);
+  for (let guard = 0; segs.length > 1 && guard < 1000; guard++) {
+    // sabse chhota kamzor hissa pehle padosi mein milao
+    let wi = -1, wt = Infinity;
+    segs.forEach((g, k) => { if ((dur(g) < 900 || ton(g) < 10) && ton(g) < wt) { wt = ton(g); wi = k; } });
+    if (wi < 0) break;
+    const g = segs[wi];
+    if (wi > 0) segs[wi - 1].to = g.to; else segs[1].from = g.from;
+    segs.splice(wi, 1); segs = joinSame(segs);
+  }
+  return segs.map(g => mk(R.slice(g.from, g.to + 1), items.find(i => i.code === g.code), g.from ? R[g.from - 1].cum : 0, g.from ? R[g.from - 1].cumBit : 0));
+}
+function partsLabel(day) { return splitByItem(day, 'auto').map(p => `${esc(p.mix || '?')} ${f2(p.bitPctSet)}% · ${f2(p.totalT)} MT`).join(' + '); }
 function loadScadaIntoPlant(res) {
   SC = res; DRAFT = null;
-  $('#scadaInfo').innerHTML = `<b>${esc(res.file)}</b> · ${esc(res.meta.work)} · Mix: <b>${esc(res.meta.mix || '?')}</b> · ${res.days.map(d => `${dmy(d.date)}: ${f2(d.totalT)} MT`).join(', ')}`;
+  $('#scadaInfo').innerHTML = `<b>${esc(res.file)}</b> · ${esc(res.meta.work)}<br>` + res.days.map(d => `${dmy(d.date)}: <b>${partsLabel(d)}</b>`).join('<br>');
   $('#genPanel').classList.remove('hidden');
   $('#genDate').innerHTML = res.days.map(d => `<option value="${d.date}">${dmy(d.date)} (${d.start.slice(0, 5)}–${d.end.slice(0, 5)})</option>`).join('');
   fillItemSelect($('#genItem'), res.meta.mix);
@@ -336,7 +377,8 @@ function loadScadaIntoPlant(res) {
 }
 function fillItemSelect(sel, mixHint) {
   if (!DB.items.length) { sel.innerHTML = `<option value="">(Settings mein item add karo)</option>`; return; }
-  sel.innerHTML = DB.items.map(i => `<option value="${esc(i.code)}" ${mixHint && i.name.toUpperCase() === mixHint.toUpperCase() ? 'selected' : ''}>I-${esc(i.code)} ${esc(i.name)} (${i.pct}%)</option>`).join('');
+  sel.innerHTML = `<option value="auto" selected>Auto — SCADA Bitumen % se</option>` +
+    DB.items.map(i => `<option value="${esc(i.code)}">Sirf I-${esc(i.code)} ${esc(i.name)} (${i.pct}%)</option>`).join('');
 }
 $('#scadaFile').addEventListener('change', async e => {
   const f = e.target.files[0]; if (!f) return;
@@ -346,59 +388,79 @@ $('#scadaFile').addEventListener('change', async e => {
 $('#btnGenerate').addEventListener('click', () => {
   if (!SC) return;
   const day = SC.days.find(d => d.date === $('#genDate').value);
+  const parts = splitByItem(day, $('#genItem').value);
+  if (parts.length > 1) { toast(`Is din ${parts.length} mix mile — sab ka register ban raha hai`); return generateDays([day]); }
   try {
-    const trucks = generateTrucks(day, { startVeh: $('#genStartVeh').value, tank: $('#genTank').value, useTripper: true });
-    const item = $('#genItem').value;
-    const existing = DB.runs.find(r => sameRun(r, day, SC.file));
-    DRAFT = {
-      id: existing?.id || uid(), date: day.date, file: SC.file, mix: SC.meta.mix, item,
-      start: day.start, end: day.end, totalT: day.totalT, bitKg: day.bitKg, bitPctSet: day.bitPctSet,
-      work: SC.meta.work, trucks, src: day.hasTripper ? 'tripper' : 'cumulative', mixCorr: +DB.settings.mixCorr || 0, tankCorr: +DB.settings.tankCorr || 0
-    };
+    const p = parts[0];
+    const trucks = generateTrucks(p, { startVeh: $('#genStartVeh').value, tank: $('#genTank').value, useTripper: true });
+    const existing = DB.runs.find(r => sameRun(r, p, SC.file));
+    DRAFT = makeRun(p, trucks, existing?.id);
     numberFrom(DRAFT.trucks, 0, startGPFor(DRAFT));
     renderDraft();
-    if (existing) toast('Is date/file ka register pehle se saved hai — Save karne par replace hoga.');
+    if (existing) toast('Is samay ka register pehle se saved hai — Save karne par replace hoga.');
   } catch (err) { toast(err.message); }
 });
+function makeRun(p, trucks, id) {
+  return { id: id || uid(), date: p.date, file: SC.file, mix: p.mix, item: p.item,
+    start: p.start, end: p.end, totalT: p.totalT, bitKg: p.bitKg, bitPctSet: p.bitPctSet,
+    work: SC.meta.work, trucks, src: p.hasTripper ? 'tripper' : 'cumulative',
+    mixCorr: +DB.settings.mixCorr || 0, tankCorr: +DB.settings.tankCorr || 0 };
+}
 // Kai din ki SCADA: har din ka register ek saath banao aur save karo (truck rotation aur gate pass lagataar)
 // same din + samay overlap = wahi production (dusri file se pehle save hua ho tab bhi)
 function sameRun(r, day, file) {
   if (r.date !== day.date) return false;
-  if (r.file === file) return true;
-  return !(hm(r.end) < hm(day.start) || hm(r.start) > hm(day.end));
+  return !(hm(r.end) < hm(day.start) || hm(r.start) > hm(day.end));   // samay overlap = wahi production
 }
-function generateAllDays() {
+function generateAllDays() { if (SC) generateDays(SC.days); }
+function generateDays(days) {
   if (!SC) return;
   const act = DB.vehicles.filter(v => v.active !== false);
   if (!act.length) return toast('Pehle Vehicles tab mein trucks add karo.');
-  const item = $('#genItem').value, tank = $('#genTank').value;
+  const forced = $('#genItem').value, tank = $('#genTank').value;
   let startVeh = $('#genStartVeh').value;
-  const already = SC.days.filter(d => DB.runs.some(r => sameRun(r, d, SC.file)));
+  const parts = days.flatMap(d => splitByItem(d, forced));
+  const already = parts.filter(p => DB.runs.some(r => sameRun(r, p, SC.file)));
   let replace = true;
-  if (already.length) replace = confirm(`${already.map(d => dmy(d.date)).join(', ')} ka register pehle se saved hai.\n\nOK = in din ko dobara bana kar replace karo\nCancel = in din ko chhod do, baaki din banao`);
+  if (already.length) replace = confirm(`${[...new Set(already.map(p => dmy(p.date)))].join(', ')} ka register pehle se saved hai.\n\nOK = dobara bana kar replace karo\nCancel = unhe chhod do, baaki banao`);
   const done = [];
   try {
-    SC.days.forEach(day => {
-      const old = DB.runs.find(r => sameRun(r, day, SC.file));
-      if (old && !replace) { done.push({ date: day.date, n: '—', scada: day.totalT, reg: regTotal(old), gp: 'pehle se saved (chhoda)' }); return; }
-      if (old) DB.runs = DB.runs.filter(r => r !== old);
-      const trucks = generateTrucks(day, { startVeh, tank, useTripper: true });
-      const newRun = { id: old?.id || uid(), date: day.date, file: SC.file, mix: SC.meta.mix, item,
-        start: day.start, end: day.end, totalT: day.totalT, bitKg: day.bitKg, bitPctSet: day.bitPctSet,
-        work: SC.meta.work, trucks, src: day.hasTripper ? 'tripper' : 'cumulative', mixCorr: +DB.settings.mixCorr || 0, tankCorr: +DB.settings.tankCorr || 0 };
-      numberFrom(trucks, 0, startGPFor(newRun)); DB.runs.push(newRun);
+    parts.forEach(p => {
+      const olds = DB.runs.filter(r => sameRun(r, p, SC.file));
+      if (olds.length && !replace) { done.push({ date: p.date, mix: p.mix, n: '—', scada: p.totalT, reg: olds.reduce((a, r) => a + regTotal(r), 0), gp: 'pehle se saved (chhoda)' }); return; }
+      DB.runs = DB.runs.filter(r => !olds.includes(r));
+      const trucks = generateTrucks(p, { startVeh, tank, useTripper: true });
+      const run = makeRun(p, trucks, olds[0]?.id);
+      numberFrom(trucks, 0, startGPFor(run)); DB.runs.push(run);
       const last = trucks[trucks.length - 1]?.veh; const i = act.findIndex(v => v.no === last);
       if (i >= 0) startVeh = act[(i + 1) % act.length].no;
-      done.push({ date: day.date, n: trucks.length, scada: day.totalT, reg: trucks.reduce((a, t) => a + t.net, 0) / 1000, gp: trucks.length ? `${trucks[0].gp}–${trucks[trucks.length - 1].gp}` : '' });
+      done.push({ date: p.date, mix: `${p.mix} (${f2(p.bitPctSet)}%)`, n: trucks.length, scada: p.totalT, reg: trucks.reduce((a, t) => a + t.net, 0) / 1000, gp: trucks.length ? `${trucks[0].gp} – ${trucks[trucks.length - 1].gp}` : '' });
     });
   } catch (err) { save(); renderAll(); return toast(err.message); }
+  // aage ke saved din ho to unka gate pass numbering aage badhao
+  const mine = DB.runs.filter(r => parts.some(p => sameRun(r, p, SC.file))).sort((a, b) => runKey(a).localeCompare(runKey(b)));
+  const lastRun = mine[mine.length - 1];
+  if (lastRun && DB.runs.some(r => runKey(r) > runKey(lastRun)) && confirm('Aage ke saved din ke gate pass no. bhi is hisaab se aage badha dein?')) cascadeGP(lastRun);
   save(); DRAFT = null; $('#genTable').innerHTML = ''; $('#btnSaveRun').classList.add('hidden');
-  $('#genSummary').innerHTML = `<div class="sum"><span><b>${done.length} din</b> ka register save hua. Neeche "Saved register" mein ✏️ Edit se check/badal sakte ho.</span></div>
-    <div class="tablewrap"><table class="grid"><thead><tr><th>Date</th><th>Trucks</th><th>Gate pass</th><th>SCADA MT</th><th>Register MT</th><th>Farak</th></tr></thead><tbody>
-    ${done.map(d => `<tr><td>${dmy(d.date)}</td><td>${d.n}</td><td>${d.gp}</td><td>${f2(d.scada)}</td><td>${f2(d.reg)}</td><td>${f2(d.scada - d.reg)}</td></tr>`).join('')}</tbody></table></div>`;
-  renderAll(); toast(`${done.length} din ka register ban gaya`);
+  $('#genSummary').innerHTML = `<div class="sum"><span><b>${done.length}</b> register save hue. Neeche "Saved register" mein ✏️ Edit se check/badal sakte ho.</span></div>
+    <div class="tablewrap"><table class="grid"><thead><tr><th>Date</th><th>Mix (SCADA %)</th><th>Trucks</th><th>Gate pass</th><th>SCADA MT</th><th>Register MT</th><th>Farak</th></tr></thead><tbody>
+    ${done.map(d => `<tr><td>${dmy(d.date)}</td><td>${esc(d.mix)}</td><td>${d.n}</td><td>${d.gp}</td><td>${f2(d.scada)}</td><td>${f2(d.reg)}</td><td>${f2(d.scada - d.reg)}</td></tr>`).join('')}</tbody></table></div>`;
+  renderAll(); toast(`${done.length} register ban gaye`);
 }
 $('#btnGenAll').addEventListener('click', generateAllDays);
+$('#btnRedetect').addEventListener('click', () => {
+  const items = DB.items.filter(i => +i.pct > 0); if (!items.length) return toast('Settings mein item aur % daalo');
+  const ch = [];
+  DB.runs.forEach(r => {
+    if (!r.bitPctSet) return;
+    const it = items.reduce((b, i) => Math.abs(i.pct - r.bitPctSet) < Math.abs(b.pct - r.bitPctSet) ? i : b);
+    if (it.code != r.item) ch.push({ r, it });
+  });
+  if (!ch.length) return toast('Sab register ka item sahi hai');
+  if (!confirm(ch.map(c => `${dmy(c.r.date)}: ${c.r.mix || itemLabel(c.r.item)} → ${c.it.name} (SCADA ${f2(c.r.bitPctSet)}%)`).join('\n') + '\n\nYe badlaav karein?')) return;
+  ch.forEach(c => { c.r.item = c.it.code; c.r.mix = c.it.name; });
+  save(); renderAll(); toast(`${ch.length} register ka item badla`);
+});
 function renderDraft() {
   const d = DRAFT; if (!d) return;
   const sumNet = d.trucks.reduce((a, t) => a + t.net, 0);
@@ -734,7 +796,7 @@ $('#vehTable').addEventListener('click', e => {
 function renderSettings() {
   $$('#setForm [name]').forEach(i => { if (DB.settings[i.name] != null) i.value = DB.settings[i.name]; });
   $('#itemTable').innerHTML = `<thead><tr><th>Item no.</th><th>Mix</th><th>Design bitumen %</th><th></th></tr></thead><tbody>` +
-    (DB.items.map((it, k) => `<tr><td>${esc(it.code)}</td><td>${esc(it.name)}</td><td>${it.pct}</td><td><button class="btn sm danger" data-delit="${k}">🗑</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Item add karo (jaise 10 – BM – 3.3%)</td></tr>') + '</tbody>';
+    (DB.items.map((it, k) => `<tr><td>${esc(it.code)}</td><td>${esc(it.name)}</td><td>${it.pct}</td><td><button class="btn sm" data-edit_it="${k}">✏️</button> <button class="btn sm danger" data-delit="${k}">🗑</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Item add karo (jaise 10 – BM – 3.3%)</td></tr>') + '</tbody>';
   const a = aiCfg(); $('#aiProvider').value = a.provider || 'claude'; $('#aiKey').value = a.key || ''; $('#aiModel').value = a.model || defModel(a.provider || 'claude');
 }
 $('#btnSaveSet').addEventListener('click', () => {
@@ -751,9 +813,13 @@ $('#btnAddItem').addEventListener('click', () => {
   const code = $('#itCode').value.trim(), name = $('#itName').value.trim().toUpperCase(), pct = +$('#itPct').value;
   if (!code || !name) return toast('Item no. aur mix daalo');
   DB.items = DB.items.filter(i => i.code !== code); DB.items.push({ code, name, pct });
+  DB.runs.forEach(r => { if (r.item == code) r.mix = name; });   // naam badla to saved register mein bhi
   save(); $('#itCode').value = $('#itName').value = $('#itPct').value = ''; renderAll();
 });
-$('#itemTable').addEventListener('click', e => { const k = e.target.dataset.delit; if (k == null) return; DB.items.splice(+k, 1); save(); renderAll(); });
+$('#itemTable').addEventListener('click', e => {
+  const ek = e.target.dataset.edit_it;
+  if (ek != null) { const it = DB.items[+ek]; $('#itCode').value = it.code; $('#itName').value = it.name; $('#itPct').value = it.pct; $('#itName').focus(); return toast('Badal kar "+ Add" dabao'); }
+  const k = e.target.dataset.delit; if (k == null) return; DB.items.splice(+k, 1); save(); renderAll(); });
 function defModel(p) { return p === 'gemini' ? 'gemini-2.5-flash' : 'claude-sonnet-5-5'; }
 $('#aiProvider').addEventListener('change', e => { $('#aiModel').value = defModel(e.target.value); });
 $('#btnSaveAI').addEventListener('click', () => {
@@ -880,8 +946,8 @@ async function handleChatFile(f) {
       const res = await readScadaFile(f);
       const d = res.days;
       const btn = document.createElement('div'); btn.className = 'confirm';
-      btn.innerHTML = `<b>SCADA report padh liya</b><br>${esc(res.meta.work)} · Mix: <b>${esc(res.meta.mix)}</b><br>` +
-        d.map(x => `${dmy(x.date)}: <b>${f2(x.totalT)} MT</b> mix, bitumen <b>${f3(x.bitKg / 1000)} MT</b> (${f2(x.bitKg / 10 / x.totalT)}%), ${hm(x.start)}–${hm(x.end)}`).join('<br>') +
+      btn.innerHTML = `<b>SCADA report padh liya</b><br>${esc(res.meta.work)} · mix Bitumen % se pehchana (Settings ke items)<br>` +
+        d.map(x => `${dmy(x.date)}: <b>${partsLabel(x)}</b> · bitumen ${f3(x.bitKg / 1000)} MT · ${hm(x.start)}–${hm(x.end)}`).join('<br>') +
         `<div class="row"><button class="btn primary" data-one>🏭 Truck-wise register banao</button>${d.length > 1 ? `<button class="btn success" data-all>📅 Sab ${d.length} din ek saath</button>` : ''}</div>`;
       btn.querySelector('[data-one]').onclick = () => { loadScadaIntoPlant(res); showTab('plant'); $('#btnGenerate').click(); };
       if (d.length > 1) btn.querySelector('[data-all]').onclick = () => { loadScadaIntoPlant(res); showTab('plant'); generateAllDays(); };
