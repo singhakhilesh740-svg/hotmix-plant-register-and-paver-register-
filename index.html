@@ -160,6 +160,8 @@
         <label>Mix temp max °C<input name="tempMax" type="number" value="165"></label>
         <label>Register SCADA se kam: min %<input name="diffMin" type="number" step="0.1" value="0.7"></label>
         <label>Register SCADA se kam: max %<input name="diffMax" type="number" step="0.1" value="1.1"></label>
+        <label>Mix temp correction (+°C)<input name="mixCorr" type="number" step="1" value="0" title="SCADA sensor kam padhta ho to — saari readings par lagega"></label>
+        <label>Tank temp correction (+°C)<input name="tankCorr" type="number" step="1" value="0"></label>
       </div>
       <div class="row"><button class="btn primary" id="btnSaveSet">Save</button>
         <button class="btn danger" id="btnDelWork">🗑 Ye work delete karo</button></div>

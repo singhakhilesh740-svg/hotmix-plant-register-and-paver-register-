@@ -6,7 +6,7 @@
 const KEY = 'hmp_register_v1';
 const AIKEY = 'hmp_ai_v1';
 const DEF = () => ({
-  settings: { workName: '', agency: '', plant: '', division: '', gpStart: 1, gpBook: '', gpLeaf: 1, gpPerBook: 50, tempMin: 140, tempMax: 165, diffMin: 0.7, diffMax: 1.1 },
+  settings: { workName: '', agency: '', plant: '', division: '', gpStart: 1, gpBook: '', gpLeaf: 1, gpPerBook: 50, tempMin: 140, tempMax: 165, diffMin: 0.7, diffMax: 1.1, mixCorr: 0, tankCorr: 0 },
   items: [],
   vehicles: [],
   opening: null,            // {date, qty}
@@ -143,12 +143,18 @@ function parseScadaWorkbook(wb) {
   rows.forEach(r => (byDate[r.date] = byDate[r.date] || []).push(r));
   const days = Object.keys(byDate).sort().map(date => {
     const rs = byDate[date];
-    let offN = 0, offB = 0, pN = 0, pB = 0, mxN = 0, mxB = 0;
+    // Din ki shuruat mein counter pichhle din ka total dikha sakta hai (carry-over) -> use baseline maano, jodo nahi
+    // carry-over tabhi maano jab din mein aage counter reset hua ho (warna shuru ki reading is din ka hi maal hai)
+    const hasReset = rs.some((r, k) => k && rs[k - 1].net > 5 && r.net < rs[k - 1].net * 0.2);
+    const carry = hasReset && rs[0].net > 2;
+    let baseN = carry ? rs[0].net : 0, baseB = carry ? rs[0].bitKg : 0;
+    let offN = 0, offB = 0, pN = rs[0].net, pB = rs[0].bitKg, mxN = 0, mxB = 0;
     rs.forEach(r => {
       // asli counter reset tabhi jab cumulative lagbhag 0 par gire (chhota ghatna = SCADA ki gadbad, ignore)
-      if (pN > 5 && r.net < pN * 0.2) { offN += pN; offB += pB; }
+      if (pN > 5 && r.net < pN * 0.2) { offN += Math.max(0, pN - baseN); offB += Math.max(0, pB - baseB); baseN = 0; baseB = 0; }
       pN = r.net; pB = r.bitKg;
-      r.cum = Math.max(mxN, +(r.net + offN).toFixed(3)); r.cumBit = Math.max(mxB, r.bitKg + offB);   // kabhi peeche nahi
+      r.cum = Math.max(mxN, +(offN + Math.max(0, r.net - baseN)).toFixed(3));
+      r.cumBit = Math.max(mxB, offB + Math.max(0, r.bitKg - baseB));   // kabhi peeche nahi
       mxN = r.cum; mxB = r.cumBit;
     });
     const last = rs[rs.length - 1];
@@ -200,7 +206,8 @@ function generateTrucks(day, opts) {
     trucks.push({
       veh: veh.no, time: hm(rs[toIdx].time), net: r10(net), tare: tareFor(day.date, veh.no),
       gross: r10(net) + tareFor(day.date, veh.no), cum: rs[toIdx].cum,
-      mixT: mixT != null ? Math.round(mixT) : '', tankT: tankT != null ? Math.round(tankT) : '',
+      // sensor correction (Settings) — saari readings par barabar
+      mixT: mixT != null ? Math.round(mixT + (+DB.settings.mixCorr || 0)) : '', tankT: tankT != null ? Math.round(tankT + (+DB.settings.tankCorr || 0)) : '',
       aggT: '', chain: '', remark: ''
     });
   };
@@ -341,11 +348,11 @@ $('#btnGenerate').addEventListener('click', () => {
   try {
     const trucks = generateTrucks(day, { startVeh: $('#genStartVeh').value, tank: $('#genTank').value, useTripper: true });
     const item = $('#genItem').value;
-    const existing = DB.runs.find(r => r.date === day.date && r.file === SC.file);
+    const existing = DB.runs.find(r => sameRun(r, day, SC.file));
     DRAFT = {
       id: existing?.id || uid(), date: day.date, file: SC.file, mix: SC.meta.mix, item,
       start: day.start, end: day.end, totalT: day.totalT, bitKg: day.bitKg, bitPctSet: day.bitPctSet,
-      work: SC.meta.work, trucks, src: day.hasTripper ? 'tripper' : 'cumulative'
+      work: SC.meta.work, trucks, src: day.hasTripper ? 'tripper' : 'cumulative', mixCorr: +DB.settings.mixCorr || 0, tankCorr: +DB.settings.tankCorr || 0
     };
     numberFrom(DRAFT.trucks, 0, startGPFor(DRAFT));
     renderDraft();
@@ -353,23 +360,31 @@ $('#btnGenerate').addEventListener('click', () => {
   } catch (err) { toast(err.message); }
 });
 // Kai din ki SCADA: har din ka register ek saath banao aur save karo (truck rotation aur gate pass lagataar)
+// same din + samay overlap = wahi production (dusri file se pehle save hua ho tab bhi)
+function sameRun(r, day, file) {
+  if (r.date !== day.date) return false;
+  if (r.file === file) return true;
+  return !(hm(r.end) < hm(day.start) || hm(r.start) > hm(day.end));
+}
 function generateAllDays() {
   if (!SC) return;
   const act = DB.vehicles.filter(v => v.active !== false);
   if (!act.length) return toast('Pehle Vehicles tab mein trucks add karo.');
   const item = $('#genItem').value, tank = $('#genTank').value;
   let startVeh = $('#genStartVeh').value;
-  const already = SC.days.filter(d => DB.runs.some(r => r.date === d.date && r.file === SC.file)).length;
-  if (already && !confirm(`${already} din ka register pehle se saved hai. Unhe dobara bana kar replace karein?`)) return;
+  const already = SC.days.filter(d => DB.runs.some(r => sameRun(r, d, SC.file)));
+  let replace = true;
+  if (already.length) replace = confirm(`${already.map(d => dmy(d.date)).join(', ')} ka register pehle se saved hai.\n\nOK = in din ko dobara bana kar replace karo\nCancel = in din ko chhod do, baaki din banao`);
   const done = [];
   try {
     SC.days.forEach(day => {
-      const old = DB.runs.find(r => r.date === day.date && r.file === SC.file);
+      const old = DB.runs.find(r => sameRun(r, day, SC.file));
+      if (old && !replace) { done.push({ date: day.date, n: '—', scada: day.totalT, reg: regTotal(old), gp: 'pehle se saved (chhoda)' }); return; }
       if (old) DB.runs = DB.runs.filter(r => r !== old);
       const trucks = generateTrucks(day, { startVeh, tank, useTripper: true });
       const newRun = { id: old?.id || uid(), date: day.date, file: SC.file, mix: SC.meta.mix, item,
         start: day.start, end: day.end, totalT: day.totalT, bitKg: day.bitKg, bitPctSet: day.bitPctSet,
-        work: SC.meta.work, trucks, src: day.hasTripper ? 'tripper' : 'cumulative' };
+        work: SC.meta.work, trucks, src: day.hasTripper ? 'tripper' : 'cumulative', mixCorr: +DB.settings.mixCorr || 0, tankCorr: +DB.settings.tankCorr || 0 };
       numberFrom(trucks, 0, startGPFor(newRun)); DB.runs.push(newRun);
       const last = trucks[trucks.length - 1]?.veh; const i = act.findIndex(v => v.no === last);
       if (i >= 0) startVeh = act[(i + 1) % act.length].no;
@@ -484,6 +499,14 @@ function printP5(runs) {
   <tr class="num">${[1,2,3,4,5,6,7,8,9,10,11,12,13].map(n => `<td>${n}</td>`).join('')}</tr>
   </thead><tbody>${rowsHtml}</tbody></table></div>`;
 }
+function corrNote(runs) {
+  const m = [...new Set(runs.map(r => +r.mixCorr || 0))], t = [...new Set(runs.map(r => +r.tankCorr || 0))];
+  const sg = v => (v > 0 ? '+' : '') + v;
+  const parts = [];
+  if (m.some(v => v)) parts.push(`મિશ્રણનું ઉષ્ણતામાન = SCADA ${m.map(sg).join(' / ')}°C (સેન્સર કરેક્શન)`);
+  if (t.some(v => v)) parts.push(`ટાંકીનું ઉષ્ણતામાન = SCADA ${t.map(sg).join(' / ')}°C (સેન્સર કરેક્શન)`);
+  return parts.length ? `<p style="font-size:10px;margin:4px 0">નોંધ: ${parts.join('; ')}</p>` : '';
+}
 function printP3(runs) {
   let rowsHtml = '';
   runs.forEach(r => {
@@ -500,7 +523,7 @@ function printP3(runs) {
   <th colspan="3">ઉષ્ણતામાનના માપ ફેરનહીટ / સેન્ટીગ્રેડ અંશ</th><th rowspan="2">મિશ્રણ જે સ્થળે પાથરવાનું છે તેના કિ.મી. ચેઈનેજ વગેરે</th><th rowspan="2">ઉષ્ણતામાનની નોંધ રાખનારની સહી</th><th rowspan="2">રીમાર્ક</th></tr>
   <tr><th>ગરમ કરેલ એગ્રીગેટનું ઉ.</th><th>ટાંકીમાં ગરમ ડામરનું ઉ.</th><th>હોટમીક્ષ પ્લાન્ટમાંથી બહાર આવતા મિશ્રણનું ઉ.</th></tr>
   <tr class="num">${[1,2,3,4,5,6,7,8,9,10].map(n => `<td>${n}</td>`).join('')}</tr>
-  </thead><tbody>${rowsHtml}</tbody></table></div>`;
+  </thead><tbody>${rowsHtml}</tbody></table>${corrNote(runs)}</div>`;
 }
 function doPrint(html) {
   if (!html) return toast('Print ke liye data nahi hai');
