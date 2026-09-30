@@ -14,6 +14,7 @@ const DEF = () => ({
   runs: [],                 // saved plant runs
   tack: {},                 // {date: MT}
   dayTare: {},              // {date: {veh: kg}} — one tare per truck per day
+  p1: {},                   // Parishisht-1 manual cols per date: {chain, waste, reason, remark}
   chat: []
 });
 // STORE = { works: {id: workData}, current: id }  — har kaam ka alag data
@@ -567,13 +568,21 @@ function buildLedger() {
     [...dates].sort().forEach(date => {
       const g = gps.filter(x => x.eff === date);
       const runs = DB.runs.filter(r => r.date === date);
-      const mixMT = runs.reduce((a, r) => a + r.bitKg / 1000, 0);
-      const mixT = runs.reduce((a, r) => a + r.totalT, 0);
-      const theo = runs.reduce((a, r) => { const it = DB.items.find(i => i.code == r.item); return a + (it ? r.totalT * it.pct / 100 : 0); }, 0);
+      // Mishran mate vaparash = register ka mix jaththo × Settings mein us item ka bitumen %
+      const pctOf = r => +(DB.items.find(i => i.code == r.item)?.pct) || 0;
+      const mixT = runs.reduce((a, r) => a + regTotal(r), 0);
+      const mixMT = runs.reduce((a, r) => a + regTotal(r) * pctOf(r) / 100, 0);
+      const scadaMT = runs.reduce((a, r) => a + r.bitKg / 1000, 0);
+      // Col 14: Settings mein item ka bitumen % (ek din mein ek se zyada item ho to naam ke saath)
+      const its = [...new Map(runs.map(r => { const it = DB.items.find(i => i.code == r.item); return [r.item, it]; })).values()];
+      const pctTxt = its.length === 1 ? (its[0]?.pct ? f2(its[0].pct) + ' %' : '—')
+        : its.map(it => it ? `${it.name} ${it.pct ? f2(it.pct) + ' %' : '—'}` : '—').join(', ');
+      const noPct = runs.some(r => !pctOf(r));
+      const theo = mixMT;
       const tack = +DB.tack[date] || 0;
       const open = bal, rcv = g.reduce((a, x) => a + (+x.g.qty || 0), 0), total = open + rcv, cons = mixMT + tack;
       bal = total - cons;
-      out.push({ date, open, gps: g.map(x => Object.assign({}, x.g, { effDate: x.eff, shifted: x.eff !== (x.g.recvDate || x.g.invDate) })), rcv, total, tack, mixMT, cons, close: bal, mixT, theo,
+      out.push({ date, scadaMT, pctTxt, noPct, p1: DB.p1[date] || {}, open, gps: g.map(x => Object.assign({}, x.g, { effDate: x.eff, shifted: x.eff !== (x.g.recvDate || x.g.invDate) })), rcv, total, tack, mixMT, cons, close: bal, mixT, theo,
         pct: mixT ? mixMT / mixT * 100 : 0, items: [...new Set(runs.map(r => itemLabel(r.item) || r.mix))].join(', ') });
     });
     return out;
@@ -594,17 +603,25 @@ function currentBalance() { const l = buildLedger(); return l.length ? l[l.lengt
 function renderBitumen() {
   $('#obDate').value = DB.opening?.date || ''; $('#obQty').value = DB.opening?.qty ?? '';
   const gps = [...DB.gatepasses].sort((a, b) => b.recvDate.localeCompare(a.recvDate));
-  $('#gpTable').innerHTML = `<thead><tr><th>Aavak date</th><th>Invoice date</th><th>Invoice no.</th><th>Supplier</th><th>Tanker</th><th>Grade</th><th>Qty (MT)</th><th></th></tr></thead><tbody>` +
-    (gps.map(g => `<tr><td>${dmy(g.recvDate)}</td><td>${dmy(g.invDate)}</td><td>${esc(g.invNo)}</td><td>${esc(g.supplier)}</td><td>${esc(g.tanker)}</td><td>${esc(g.grade)}</td><td><b>${f3(g.qty)}</b></td>
-      <td>${g.src === 'ai' ? '<span class="pill ai">AI</span> ' : ''}<button class="btn sm danger" data-delgp="${g.id}">🗑</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Koi gatepass nahi</td></tr>') + '</tbody>';
+  $('#gpTable').innerHTML = `<thead><tr><th>Aavak date</th><th>Invoice date</th><th>Invoice no.</th><th>Supplier</th><th>Tanker</th><th>Gate pass</th><th>Grade</th><th>Qty (MT)</th><th></th></tr></thead><tbody>` +
+    (gps.map(g => `<tr><td>${dmy(g.recvDate)}</td><td>${dmy(g.invDate)}</td><td>${esc(g.invNo)}</td><td>${esc(g.supplier)}</td><td>${esc(g.tanker)}</td><td>${esc(g.gpNo || '')}</td><td>${esc(g.grade)}</td><td><b>${f3(g.qty)}</b></td>
+      <td>${g.src === 'ai' ? '<span class="pill ai">AI</span> ' : ''}<button class="btn sm danger" data-delgp="${g.id}">🗑</button></td></tr>`).join('') || '<tr><td colspan="9" class="muted">Koi gatepass nahi</td></tr>') + '</tbody>';
   const L = buildLedger();
   if (!DB.opening) { $('#ledgerTable').innerHTML = '<tr><td class="muted">Pehle opening balance daalo.</td></tr>'; return; }
-  $('#ledgerTable').innerHTML = `<thead><tr><th>Date</th><th>Opening</th><th>Invoice</th><th>Tanker</th><th>Aavak</th><th>Kul</th><th>Tack coat</th><th>Mix (SCADA)</th><th>Kul vaparash</th><th>Closing</th><th>Mix MT</th><th>SCADA %</th><th>Design mujab</th></tr></thead><tbody>` +
-    L.map(d => `<tr><td>${dmy(d.date)}</td><td>${f3(d.open)}</td><td>${d.gps.map(g => esc(g.invNo) + (g.shifted ? ` <span class="flag" title="Aavak ${dmy(g.recvDate || g.invDate)} thi — balance negative na ho isliye ${dmy(g.effDate)}">↺ ${dmy(g.recvDate || g.invDate)}</span>` : '')).join(', ')}</td><td>${esc(d.gps.map(g => g.tanker).join(', '))}</td>
-      <td>${d.rcv ? f3(d.rcv) : ''}</td><td>${f3(d.total)}</td>
+  const inp = (date, k, v, w = 90) => `<input data-p1="${date}" data-k="${k}" value="${esc(v ?? '')}" style="width:${w}px">`;
+  $('#ledgerTable').innerHTML = `<thead><tr><th>1 Date</th><th>2 Khulti silak</th><th>3 Invoice no.</th><th>4 Gate pass no.</th><th>5 Jaththo</th><th>6 Kul</th>
+    <th>7 Chhantva (tack)</th><th>8 Mishran mate</th><th>9 Kul vaparash</th><th>10 Vadhel jaththo</th><th>11 Km chainage</th><th>12 Kaam jaththo (T)</th>
+    <th>13 Bagad</th><th>14 Dhoran</th><th>15 Tafavat karan</th><th class="muted">SCADA bitumen (ref.)</th></tr></thead><tbody>` +
+    L.map(d => `<tr><td>${dmy(d.date)}</td><td>${f3(d.open)}</td>
+      <td>${d.gps.map(g => esc(g.invNo) + (g.shifted ? ` <span class="flag" title="Aavak ${dmy(g.recvDate || g.invDate)} thi — balance negative na ho isliye ${dmy(g.effDate)}">↺ ${dmy(g.recvDate || g.invDate)}</span>` : '')).join('<br>')}</td>
+      <td>${d.gps.map(g => esc(g.gpNo || g.tanker)).join('<br>')}</td>
+      <td>${d.gps.map(g => f3(g.qty)).join('<br>')}</td><td>${f3(d.total)}</td>
       <td><input type="number" step="0.001" data-tack="${d.date}" value="${d.tack || ''}" style="width:80px"></td>
-      <td>${d.mixMT ? f3(d.mixMT) : ''}</td><td>${f3(d.cons)}</td><td><b style="${d.neg ? 'color:var(--bad)' : ''}">${f3(d.close)}</b>${d.neg ? '<div class="flag">⚠ Negative — gatepass missing?</div>' : ''}</td>
-      <td>${d.mixT ? f2(d.mixT) : ''}</td><td>${d.mixT ? f2(d.pct) : ''}</td><td>${d.theo ? f3(d.theo) : ''}</td></tr>`).join('') + '</tbody>';
+      <td>${d.mixMT ? f3(d.mixMT) : ''}${d.noPct ? '<div class="flag">⚠ Item % Settings mein nahi</div>' : ''}</td><td>${f3(d.cons)}</td>
+      <td><b style="${d.neg ? 'color:var(--bad)' : ''}">${f3(d.close)}</b>${d.neg ? '<div class="flag">⚠ Negative — gatepass missing?</div>' : ''}</td>
+      <td>${inp(d.date, 'chain', d.p1.chain)}</td><td>${d.mixT ? f2(d.mixT) : ''}</td>
+      <td>${inp(d.date, 'waste', d.p1.waste, 60)}</td><td>${d.mixT ? d.pctTxt : ''}</td><td>${inp(d.date, 'reason', d.p1.reason, 120)}</td>
+      <td class="muted">${d.scadaMT ? f3(d.scadaMT) : ''}</td></tr>`).join('') + '</tbody>';
 }
 $('#btnSaveOB').addEventListener('click', () => {
   const date = $('#obDate').value, qty = +$('#obQty').value;
@@ -628,35 +645,42 @@ $('#gpTable').addEventListener('click', e => {
   DB.gatepasses = DB.gatepasses.filter(g => g.id !== id); save(); renderAll();
 });
 $('#ledgerTable').addEventListener('change', e => {
+  const pd = e.target.dataset.p1;
+  if (pd) { DB.p1[pd] = DB.p1[pd] || {}; DB.p1[pd][e.target.dataset.k] = e.target.value.trim(); save(); return; }
   const d = e.target.dataset.tack; if (!d) return;
   DB.tack[d] = +e.target.value || 0; save(); renderBitumen();
 });
 function printP1() {
   const L = buildLedger(); if (!L.length) return '';
+  const kg = q => Math.round((+q || 0) * 1000).toLocaleString('en-IN');
   let rows = '';
   L.forEach(d => {
     const n = Math.max(1, d.gps.length);
     for (let k = 0; k < n; k++) {
       const g = d.gps[k]; const first = k === 0; const last = k === n - 1;
-      rows += `<tr><td>${first ? dmy(d.date) : ''}</td><td>${first ? f3(d.open) : ''}</td><td>${g ? esc(g.invNo) : ''}</td><td>${g ? esc(g.tanker) : ''}</td>
-      <td>${g ? f3(g.qty) : ''}</td><td>${last ? f3(d.total) : ''}</td>
-      <td>${last && d.tack ? f3(d.tack) : ''}</td><td>${last && d.mixMT ? f3(d.mixMT) : ''}</td><td>${last ? f3(d.cons) : ''}</td><td class="tot">${last ? f3(d.close) : ''}</td>
-      <td>${last ? esc(d.items) : ''}</td><td>${last && d.mixT ? f2(d.mixT) : ''}</td><td>${last && d.mixT ? f2(d.pct) + '%' : ''}</td><td>${last && d.theo ? f3(d.theo) : ''}</td><td></td><td></td><td></td><td></td></tr>`;
+      const rem = [g ? `આવક ${kg(g.qty)} કિ.ગ્રા. (બલ્ક ટેન્કર ${esc(g.tanker || '')})` : '', last && d.cons ? `વપરાશ ${kg(d.cons)} કિ.ગ્રા.` : '', last ? esc(d.p1.remark || '') : ''].filter(Boolean).join('; ');
+      rows += `<tr><td>${first ? dmy(d.date) : ''}</td><td>${first ? f3(d.open) : ''}</td>
+      <td>${g ? esc(g.invNo) : ''}</td><td>${g ? esc(g.gpNo || g.tanker || '') : ''}</td><td>${g ? f3(g.qty) : ''}</td><td>${last ? f3(d.total) : ''}</td>
+      <td>${last && d.tack ? f3(d.tack) : ''}</td><td>${last && d.mixMT ? f3(d.mixMT) : ''}</td><td>${last && d.cons ? f3(d.cons) : ''}</td><td class="tot">${last ? f3(d.close) : ''}</td>
+      <td>${last ? esc(d.p1.chain || '') : ''}</td><td>${last && d.mixT ? f2(d.mixT) + ' ટન' : ''}</td><td>${last ? esc(d.p1.waste || '') : ''}</td>
+      <td>${last && d.mixT ? esc(d.pctTxt) : ''}</td><td>${last ? esc(d.p1.reason || '') : ''}</td><td></td><td></td><td style="font-size:9px">${rem}</td></tr>`;
     }
   });
   return `<div class="reg">${regHead('૧', 'ડામરની આવક તથા વપરાશની નોંધ')}
-  <table><thead>
-  <tr><th rowspan="2">તારીખ</th><th rowspan="2">ખુલતી સિલક</th><th colspan="4">ડામરની આવક</th><th colspan="3">ડામરનો રોજનો વપરાશ</th>
-  <th rowspan="2">દિવસના અંતે બાકી જથ્થો</th><th rowspan="2">કામ / મિશ્રણ</th><th rowspan="2">મિશ્રણનો જથ્થો (MT)</th><th rowspan="2">ડામરના ટકા</th><th rowspan="2">નિર્દિષ્ટ ધોરણ મુજબ વપરાશ</th><th rowspan="2">તફાવતના કારણો</th><th rowspan="2">ઇજનેરની સહી</th><th rowspan="2">ઠેકેદારની સહી</th><th rowspan="2">રીમાર્ક</th></tr>
-  <tr><th>ઇન્વોઇસ / ગેટ પાસ નંબર</th><th>ટેન્કર નંબર</th><th>આવેલ જથ્થો</th><th>કુલ જથ્થો</th><th>ટેક કોટ માટે</th><th>મિશ્રણ માટે</th><th>કુલ</th></tr>
+  <table class="p1"><colgroup><col style="width:5%"><col style="width:5%"><col style="width:9.5%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:4.5%"><col style="width:5%"><col style="width:5%"><col style="width:5.5%"><col style="width:7%"><col style="width:5.5%"><col style="width:4.5%"><col style="width:6%"><col style="width:6%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:7.5%"></colgroup><thead>
+  <tr><th rowspan="2">તારીખ</th><th rowspan="2">ખુલતી સિલક</th><th colspan="4">ડામરની આવક</th><th colspan="3">કામનો રોજીંદો વપરાશ</th>
+  <th rowspan="2">દિવસના અંતે વપરાશ પછીનો વધેલ જથ્થો</th><th rowspan="2">કામ થયું હોય તેનું સ્થળ કી.મી. ચેઈનેજ</th><th rowspan="2">થયેલ કામનો જથ્થો ટન ચો.મી.</th>
+  <th rowspan="2">ડામરનો બગાડ કંઈ થયો હોય તો</th><th rowspan="2">કામની નિર્દિષ્ટ વિગતો મુજબ ડામરના વપરાશનું ધોરણ</th><th rowspan="2">તફાવતનાં કારણો</th>
+  <th rowspan="2">દેખરેખ રાખનારની સહી</th><th rowspan="2">ઠેકેદારની સહી</th><th rowspan="2">રીમાર્ક ડામરનો જથ્થો ડ્રમની સંખ્યા તથા કીલો ગ્રામ એ બંને રીતે દર્શાવવા જરૂરી છે.</th></tr>
+  <tr><th>ઇન્ડેન્ટ / ઇન્વોઇસ નંબર</th><th>ગેઈટ પાસ નંબર</th><th>જથ્થો</th><th>કુલ જથ્થો</th><th>છાંટવા માટે</th><th>મિશ્રણ માટે</th><th>કુલ</th></tr>
   <tr class="num">${Array.from({ length: 18 }, (_, i) => `<td>${i + 1}</td>`).join('')}</tr>
-  </thead><tbody>${rows}</tbody></table><p style="font-size:10px">જથ્થો મેટ્રિક ટનમાં. મિશ્રણ માટેનો વપરાશ SCADA રિપોર્ટ મુજબ.</p></div>`;
+  </thead><tbody>${rows}</tbody></table><p style="font-size:10px">જથ્થો મેટ્રિક ટનમાં. મિશ્રણ માટેનો વપરાશ = થયેલ કામનો જથ્થો × નિર્દિષ્ટ ડામર ટકા.</p></div>`;
 }
 $('#btnPrintP1').addEventListener('click', () => doPrint(printP1()));
 $('#btnXlsP1').addEventListener('click', () => {
   const L = buildLedger(); if (!L.length) return toast('Ledger khali hai');
-  const a = [['Date', 'Opening (MT)', 'Invoice no.', 'Tanker', 'Aavak (MT)', 'Kul (MT)', 'Tack coat (MT)', 'Mix (MT)', 'Kul vaparash', 'Closing (MT)', 'Mix qty (MT)', 'SCADA bit %', 'Design mujab (MT)']];
-  L.forEach(d => a.push([dmy(d.date), +f3(d.open), d.gps.map(g => g.invNo).join(', '), d.gps.map(g => g.tanker).join(', '), +f3(d.rcv), +f3(d.total), +f3(d.tack), +f3(d.mixMT), +f3(d.cons), +f3(d.close), +f2(d.mixT), +f2(d.pct), +f3(d.theo)]));
+  const a = [['1 Tarikh', '2 Khulti silak', '3 Invoice no.', '4 Gate pass no.', '5 Jaththo', '6 Kul jaththo', '7 Chhantva mate', '8 Mishran mate', '9 Kul', '10 Vadhel jaththo', '11 Km chainage', '12 Kaam jaththo (T)', '13 Bagad', '14 Dhoran', '15 Tafavat karan', '16 Dekhrekh sahi', '17 Thekedar sahi', '18 Remark']];
+  L.forEach(d => a.push([dmy(d.date), +f3(d.open), d.gps.map(g => g.invNo).join(', '), d.gps.map(g => g.gpNo || g.tanker).join(', '), d.rcv ? +f3(d.rcv) : '', +f3(d.total), d.tack ? +f3(d.tack) : '', d.mixMT ? +f3(d.mixMT) : '', +f3(d.cons), +f3(d.close), d.p1.chain || '', d.mixT ? +f2(d.mixT) : '', d.p1.waste || '', d.mixT ? d.pctTxt : '', d.p1.reason || '', '', '', d.p1.remark || '']));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'Parishisht-1');
   XLSX.writeFile(wb, 'Bitumen_Register_P1.xlsx');
 });
@@ -884,6 +908,7 @@ async function handleChatFile(f) {
  "invoice_date":"YYYY-MM-DD",
  "received_date":"YYYY-MM-DD from handwritten date or security stamp near the middle of the page, else null",
  "tanker_no":"T.T. No / truck no, e.g. GJ06AX6699, no spaces",
+ "gatepass_no":"gate pass / delivery no. if printed or handwritten, else null",
  "grade":"e.g. VG-30",
  "qty_mt": number (Quantity in TO/MT, 3 decimals),
  "confidence":"high|medium|low",
@@ -957,7 +982,7 @@ function showVehicleConfirm(j) {
 }
 function showGatepassConfirm(j) {
   const box = document.createElement('div'); box.className = 'confirm';
-  const v = { recvDate: j.received_date || j.invoice_date || '', invDate: j.invoice_date || '', invNo: j.invoice_no || '', supplier: j.supplier || '', tanker: normVeh(j.tanker_no), grade: j.grade || 'VG-30', qty: j.qty_mt ?? '' };
+  const v = { recvDate: j.received_date || j.invoice_date || '', invDate: j.invoice_date || '', invNo: j.invoice_no || '', supplier: j.supplier || '', tanker: normVeh(j.tanker_no), gpNo: j.gatepass_no || '', grade: j.grade || 'VG-30', qty: j.qty_mt ?? '' };
   box.innerHTML = `<b>Gatepass reading</b> <span class="pill ai">AI · ${esc(j.confidence || '?')}</span> — check karke Save dabao
     <div class="grid4" style="margin-top:8px">
     <label>Plant aavak date<input type="date" name="recvDate" value="${esc(v.recvDate)}"></label>
@@ -965,6 +990,7 @@ function showGatepassConfirm(j) {
     <label>Invoice no.<input name="invNo" value="${esc(v.invNo)}"></label>
     <label>Supplier<input name="supplier" value="${esc(v.supplier)}"></label>
     <label>Tanker<input name="tanker" value="${esc(v.tanker)}"></label>
+    <label>Gate pass no.<input name="gpNo" value="${esc(v.gpNo)}"></label>
     <label>Grade<input name="grade" value="${esc(v.grade)}"></label>
     <label>Qty (MT)<input name="qty" type="number" step="0.001" value="${esc(v.qty)}"></label></div>
     ${j.notes ? `<div class="muted">Note: ${esc(j.notes)}</div>` : ''}
