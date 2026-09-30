@@ -137,16 +137,19 @@ function parseScadaWorkbook(wb) {
       bitKg: +r[C.bitKg] || 0, net: +r[C.net] || 0
     });
   }
-  rows.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  rows.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time) || a.net - b.net);   // same second: chhota cumulative pehle
   // group by date, handle counter resets
   const byDate = {};
   rows.forEach(r => (byDate[r.date] = byDate[r.date] || []).push(r));
   const days = Object.keys(byDate).sort().map(date => {
     const rs = byDate[date];
-    let offN = 0, offB = 0, pN = 0, pB = 0;
+    let offN = 0, offB = 0, pN = 0, pB = 0, mxN = 0, mxB = 0;
     rs.forEach(r => {
-      if (r.net < pN - 0.5) offN += pN; if (r.bitKg < pB - 5) offB += pB;
-      pN = r.net; pB = r.bitKg; r.cum = +(r.net + offN).toFixed(3); r.cumBit = r.bitKg + offB;
+      // asli counter reset tabhi jab cumulative lagbhag 0 par gire (chhota ghatna = SCADA ki gadbad, ignore)
+      if (pN > 5 && r.net < pN * 0.2) { offN += pN; offB += pB; }
+      pN = r.net; pB = r.bitKg;
+      r.cum = Math.max(mxN, +(r.net + offN).toFixed(3)); r.cumBit = Math.max(mxB, r.bitKg + offB);   // kabhi peeche nahi
+      mxN = r.cum; mxB = r.cumBit;
     });
     const last = rs[rs.length - 1];
     const bp = rs.filter(r => r.tph > 0).map(r => r.bitPct);
