@@ -286,6 +286,8 @@ function loadScadaIntoPlant(res) {
   if (lv) { const i = act.findIndex(v => v.no === lv); if (i >= 0) start = act[(i + 1) % act.length].no; }
   $('#genStartVeh').innerHTML = act.map(v => `<option ${v.no === start ? 'selected' : ''}>${esc(v.no)}</option>`).join('');
   $('#genTable').innerHTML = ''; $('#genSummary').innerHTML = ''; $('#btnSaveRun').classList.add('hidden');
+  $('#btnGenAll').classList.toggle('hidden', res.days.length < 2);
+  $('#btnGenAll').textContent = `📅 Sab ${res.days.length} din ek saath (save bhi)`;
   const d = res.days[0];
   $('#genNote').textContent = d.hasTripper ? 'SCADA mein Tripper No. hai — asli tripper breaks use honge.' : 'Tripper No. SCADA mein khali hai — truck capacity ke hisaab se cumulative split hoga.';
 }
@@ -317,6 +319,37 @@ $('#btnGenerate').addEventListener('click', () => {
     if (existing) toast('Is date/file ka register pehle se saved hai — Save karne par replace hoga.');
   } catch (err) { toast(err.message); }
 });
+// Kai din ki SCADA: har din ka register ek saath banao aur save karo (truck rotation aur gate pass lagataar)
+function generateAllDays() {
+  if (!SC) return;
+  const act = DB.vehicles.filter(v => v.active !== false);
+  if (!act.length) return toast('Pehle Vehicles tab mein trucks add karo.');
+  const item = $('#genItem').value, tank = $('#genTank').value;
+  let startVeh = $('#genStartVeh').value;
+  const already = SC.days.filter(d => DB.runs.some(r => r.date === d.date && r.file === SC.file)).length;
+  if (already && !confirm(`${already} din ka register pehle se saved hai. Unhe dobara bana kar replace karein?`)) return;
+  const done = [];
+  try {
+    SC.days.forEach(day => {
+      const old = DB.runs.find(r => r.date === day.date && r.file === SC.file);
+      if (old) DB.runs = DB.runs.filter(r => r !== old);
+      const trucks = generateTrucks(day, { startVeh, tank, useTripper: true });
+      let gp = nextGatePass(); trucks.forEach(t => t.gp = gp++);
+      DB.runs.push({ id: old?.id || uid(), date: day.date, file: SC.file, mix: SC.meta.mix, item,
+        start: day.start, end: day.end, totalT: day.totalT, bitKg: day.bitKg, bitPctSet: day.bitPctSet,
+        work: SC.meta.work, trucks, src: day.hasTripper ? 'tripper' : 'cumulative' });
+      const last = trucks[trucks.length - 1]?.veh; const i = act.findIndex(v => v.no === last);
+      if (i >= 0) startVeh = act[(i + 1) % act.length].no;
+      done.push({ date: day.date, n: trucks.length, scada: day.totalT, reg: trucks.reduce((a, t) => a + t.net, 0) / 1000, gp: trucks.length ? `${trucks[0].gp}–${trucks[trucks.length - 1].gp}` : '' });
+    });
+  } catch (err) { save(); renderAll(); return toast(err.message); }
+  save(); DRAFT = null; $('#genTable').innerHTML = ''; $('#btnSaveRun').classList.add('hidden');
+  $('#genSummary').innerHTML = `<div class="sum"><span><b>${done.length} din</b> ka register save hua. Neeche "Saved register" mein ✏️ Edit se check/badal sakte ho.</span></div>
+    <div class="tablewrap"><table class="grid"><thead><tr><th>Date</th><th>Trucks</th><th>Gate pass</th><th>SCADA MT</th><th>Register MT</th><th>Farak</th></tr></thead><tbody>
+    ${done.map(d => `<tr><td>${dmy(d.date)}</td><td>${d.n}</td><td>${d.gp}</td><td>${f2(d.scada)}</td><td>${f2(d.reg)}</td><td>${f2(d.scada - d.reg)}</td></tr>`).join('')}</tbody></table></div>`;
+  renderAll(); toast(`${done.length} din ka register ban gaya`);
+}
+$('#btnGenAll').addEventListener('click', generateAllDays);
 function renderDraft() {
   const d = DRAFT; if (!d) return;
   const sumNet = d.trucks.reduce((a, t) => a + t.net, 0);
@@ -451,30 +484,46 @@ $('#btnXlsPlant').addEventListener('click', () => {
 });
 
 // ================= BITUMEN =================
+function addDays(iso, n) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+const SHIFT_DAYS = 3;
+// Ledger: agar balance negative ho, to gatepass ki aavak date invoice date se 3 din ke andar aage-peeche adjust
 function buildLedger() {
   if (!DB.opening) return [];
   const od = DB.opening.date;
-  const dates = new Set();
-  DB.gatepasses.forEach(g => { if (g.recvDate >= od) dates.add(g.recvDate); });
-  DB.runs.forEach(r => { if (r.date >= od) dates.add(r.date); });
-  Object.keys(DB.tack).forEach(d => { if (d >= od && +DB.tack[d]) dates.add(d); });
-  let bal = +DB.opening.qty || 0;
-  const out = [];
-  [...dates].sort().forEach(date => {
-    const gps = DB.gatepasses.filter(g => g.recvDate === date);
-    const runs = DB.runs.filter(r => r.date === date);
-    const mixMT = runs.reduce((a, r) => a + r.bitKg / 1000, 0);
-    const mixT = runs.reduce((a, r) => a + r.totalT, 0);
-    const theo = runs.reduce((a, r) => { const it = DB.items.find(i => i.code == r.item); return a + (it ? r.totalT * it.pct / 100 : 0); }, 0);
-    const tack = +DB.tack[date] || 0;
-    const open = bal;
-    const rcv = gps.reduce((a, g) => a + (+g.qty || 0), 0);
-    const total = open + rcv;
-    const cons = mixMT + tack;
-    bal = total - cons;
-    out.push({ date, open, gps, rcv, total, tack, mixMT, cons, close: bal, mixT, theo,
-      pct: mixT ? mixMT / mixT * 100 : 0, items: [...new Set(runs.map(r => itemLabel(r.item) || r.mix))].join(', ') });
+  const gps = DB.gatepasses.map(g => {
+    const inv = g.invDate || g.recvDate, base = g.recvDate || g.invDate;
+    return { g, lo: inv, hi: addDays(inv, SHIFT_DAYS), eff: base };
   });
+  const run = () => {
+    const dates = new Set();
+    gps.forEach(x => { if (x.eff >= od) dates.add(x.eff); });
+    DB.runs.forEach(r => { if (r.date >= od) dates.add(r.date); });
+    Object.keys(DB.tack).forEach(d => { if (d >= od && +DB.tack[d]) dates.add(d); });
+    let bal = +DB.opening.qty || 0;
+    const out = [];
+    [...dates].sort().forEach(date => {
+      const g = gps.filter(x => x.eff === date);
+      const runs = DB.runs.filter(r => r.date === date);
+      const mixMT = runs.reduce((a, r) => a + r.bitKg / 1000, 0);
+      const mixT = runs.reduce((a, r) => a + r.totalT, 0);
+      const theo = runs.reduce((a, r) => { const it = DB.items.find(i => i.code == r.item); return a + (it ? r.totalT * it.pct / 100 : 0); }, 0);
+      const tack = +DB.tack[date] || 0;
+      const open = bal, rcv = g.reduce((a, x) => a + (+x.g.qty || 0), 0), total = open + rcv, cons = mixMT + tack;
+      bal = total - cons;
+      out.push({ date, open, gps: g.map(x => Object.assign({}, x.g, { effDate: x.eff, shifted: x.eff !== (x.g.recvDate || x.g.invDate) })), rcv, total, tack, mixMT, cons, close: bal, mixT, theo,
+        pct: mixT ? mixMT / mixT * 100 : 0, items: [...new Set(runs.map(r => itemLabel(r.item) || r.mix))].join(', ') });
+    });
+    return out;
+  };
+  let out = run();
+  for (let k = 0; k < gps.length + 1; k++) {
+    const neg = out.find(d => d.close < -0.0005); if (!neg) break;
+    // jo gatepass is din ke baad dikh raha hai par invoice window mein is din tak aa sakta tha
+    const c = gps.filter(x => x.eff > neg.date && x.lo <= neg.date && x.hi >= neg.date).sort((a, b) => a.eff.localeCompare(b.eff))[0];
+    if (!c) break;
+    c.eff = neg.date; out = run();
+  }
+  out.forEach(d => d.neg = d.close < -0.0005);
   return out;
 }
 function currentBalance() { const l = buildLedger(); return l.length ? l[l.length - 1].close : (DB.opening ? +DB.opening.qty : null); }
@@ -488,10 +537,10 @@ function renderBitumen() {
   const L = buildLedger();
   if (!DB.opening) { $('#ledgerTable').innerHTML = '<tr><td class="muted">Pehle opening balance daalo.</td></tr>'; return; }
   $('#ledgerTable').innerHTML = `<thead><tr><th>Date</th><th>Opening</th><th>Invoice</th><th>Tanker</th><th>Aavak</th><th>Kul</th><th>Tack coat</th><th>Mix (SCADA)</th><th>Kul vaparash</th><th>Closing</th><th>Mix MT</th><th>SCADA %</th><th>Design mujab</th></tr></thead><tbody>` +
-    L.map(d => `<tr><td>${dmy(d.date)}</td><td>${f3(d.open)}</td><td>${esc(d.gps.map(g => g.invNo).join(', '))}</td><td>${esc(d.gps.map(g => g.tanker).join(', '))}</td>
+    L.map(d => `<tr><td>${dmy(d.date)}</td><td>${f3(d.open)}</td><td>${d.gps.map(g => esc(g.invNo) + (g.shifted ? ` <span class="flag" title="Aavak ${dmy(g.recvDate || g.invDate)} thi — balance negative na ho isliye ${dmy(g.effDate)}">↺ ${dmy(g.recvDate || g.invDate)}</span>` : '')).join(', ')}</td><td>${esc(d.gps.map(g => g.tanker).join(', '))}</td>
       <td>${d.rcv ? f3(d.rcv) : ''}</td><td>${f3(d.total)}</td>
       <td><input type="number" step="0.001" data-tack="${d.date}" value="${d.tack || ''}" style="width:80px"></td>
-      <td>${d.mixMT ? f3(d.mixMT) : ''}</td><td>${f3(d.cons)}</td><td><b>${f3(d.close)}</b></td>
+      <td>${d.mixMT ? f3(d.mixMT) : ''}</td><td>${f3(d.cons)}</td><td><b style="${d.neg ? 'color:var(--bad)' : ''}">${f3(d.close)}</b>${d.neg ? '<div class="flag">⚠ Negative — gatepass missing?</div>' : ''}</td>
       <td>${d.mixT ? f2(d.mixT) : ''}</td><td>${d.mixT ? f2(d.pct) : ''}</td><td>${d.theo ? f3(d.theo) : ''}</td></tr>`).join('') + '</tbody>';
 }
 $('#btnSaveOB').addEventListener('click', () => {
@@ -740,8 +789,9 @@ $('#chatFile').addEventListener('change', async e => {
       const btn = document.createElement('div'); btn.className = 'confirm';
       btn.innerHTML = `<b>SCADA report padh liya</b><br>${esc(res.meta.work)} · Mix: <b>${esc(res.meta.mix)}</b><br>` +
         d.map(x => `${dmy(x.date)}: <b>${f2(x.totalT)} MT</b> mix, bitumen <b>${f3(x.bitKg / 1000)} MT</b> (${f2(x.bitKg / 10 / x.totalT)}%), ${hm(x.start)}–${hm(x.end)}`).join('<br>') +
-        `<div class="row"><button class="btn primary">🏭 Truck-wise register banao</button></div>`;
-      btn.querySelector('button').onclick = () => { loadScadaIntoPlant(res); showTab('plant'); $('#btnGenerate').click(); };
+        `<div class="row"><button class="btn primary" data-one>🏭 Truck-wise register banao</button>${d.length > 1 ? `<button class="btn success" data-all>📅 Sab ${d.length} din ek saath</button>` : ''}</div>`;
+      btn.querySelector('[data-one]').onclick = () => { loadScadaIntoPlant(res); showTab('plant'); $('#btnGenerate').click(); };
+      if (d.length > 1) btn.querySelector('[data-all]').onclick = () => { loadScadaIntoPlant(res); showTab('plant'); generateAllDays(); };
       appendMsg('bot', '', btn);
     } catch (err) { chatPush('bot', esc(err.message)); }
     return;
