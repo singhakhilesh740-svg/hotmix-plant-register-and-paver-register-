@@ -16,14 +16,47 @@ const DEF = () => ({
   dayTare: {},              // {date: {veh: kg}} — one tare per truck per day
   chat: []
 });
-let DB;
+// STORE = { works: {id: workData}, current: id }  — har kaam ka alag data
+let STORE, DB;
+function fixWork(d) { const w = Object.assign(DEF(), d || {}); w.settings = Object.assign(DEF().settings, (d && d.settings) || {}); return w; }
 function load() {
-  try { const d = JSON.parse(localStorage.getItem(KEY) || '{}'); DB = Object.assign(DEF(), d); DB.settings = Object.assign(DEF().settings, d.settings || {}); }
-  catch (e) { DB = DEF(); }
+  let d = {};
+  try { d = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
+  if (d.works) STORE = d;
+  else if (d.runs || d.settings) { const id = uid(); STORE = { works: { [id]: d }, current: id }; }   // purana data -> pehla work
+  else STORE = { works: {}, current: null };
+  Object.keys(STORE.works).forEach(k => STORE.works[k] = fixWork(STORE.works[k]));
+  if (!STORE.works[STORE.current]) STORE.current = Object.keys(STORE.works)[0] || null;
+  if (!STORE.current) { const id = uid(); STORE.works[id] = fixWork({ settings: { workName: 'Work 1' } }); STORE.current = id; }
+  DB = STORE.works[STORE.current];
 }
 function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(DB)); }
+  try { localStorage.setItem(KEY, JSON.stringify(STORE)); }
   catch (e) { toast('Save nahi hua: ' + e.message); }
+}
+function switchWork(id) {
+  if (!STORE.works[id]) return;
+  STORE.current = id; DB = STORE.works[id]; save();
+  SC = null; DRAFT = null;
+  $('#genPanel').classList.add('hidden'); $('#genTable').innerHTML = ''; $('#genSummary').innerHTML = '';
+  $('#scadaInfo').textContent = 'DRUM_MIX_….xlsx (AVN SCADA format)';
+  renderWorkSelect(); renderChatHistory(); renderAll();
+}
+function renderWorkSelect() {
+  const ids = Object.keys(STORE.works).sort((a, b) => (STORE.works[a].settings.workName || '').localeCompare(STORE.works[b].settings.workName || ''));
+  $('#workSel').innerHTML = ids.map(id => `<option value="${id}" ${id === STORE.current ? 'selected' : ''}>${esc(STORE.works[id].settings.workName || '(naam nahi)')}</option>`).join('')
+    + '<option value="__new">➕ Naya work…</option>';
+}
+function newWork() {
+  const name = (prompt('Naye kaam ka naam:') || '').trim();
+  if (!name) { renderWorkSelect(); return; }
+  const w = fixWork({ settings: { workName: name } });
+  if (DB && (DB.vehicles.length || DB.items.length) && confirm(`"${DB.settings.workName}" ke vehicles aur tender items naye work mein copy karein?\n(Opening balance, gatepass, register copy nahi honge)`)) {
+    w.vehicles = JSON.parse(JSON.stringify(DB.vehicles)); w.items = JSON.parse(JSON.stringify(DB.items));
+    ['agency', 'plant', 'division', 'tempMin', 'tempMax', 'diffMin', 'diffMax'].forEach(k => w.settings[k] = DB.settings[k]);
+  }
+  const id = uid(); STORE.works[id] = w; switchWork(id);
+  toast(`"${name}" bana. Settings / Vehicles / Bitumen mein details bharo.`);
 }
 function aiCfg() { try { return JSON.parse(localStorage.getItem(AIKEY) || '{}'); } catch (e) { return {}; } }
 
@@ -447,7 +480,7 @@ function buildLedger() {
 function currentBalance() { const l = buildLedger(); return l.length ? l[l.length - 1].close : (DB.opening ? +DB.opening.qty : null); }
 
 function renderBitumen() {
-  if (DB.opening) { $('#obDate').value = DB.opening.date; $('#obQty').value = DB.opening.qty; }
+  $('#obDate').value = DB.opening?.date || ''; $('#obQty').value = DB.opening?.qty ?? '';
   const gps = [...DB.gatepasses].sort((a, b) => b.recvDate.localeCompare(a.recvDate));
   $('#gpTable').innerHTML = `<thead><tr><th>Aavak date</th><th>Invoice date</th><th>Invoice no.</th><th>Supplier</th><th>Tanker</th><th>Grade</th><th>Qty (MT)</th><th></th></tr></thead><tbody>` +
     (gps.map(g => `<tr><td>${dmy(g.recvDate)}</td><td>${dmy(g.invDate)}</td><td>${esc(g.invNo)}</td><td>${esc(g.supplier)}</td><td>${esc(g.tanker)}</td><td>${esc(g.grade)}</td><td><b>${f3(g.qty)}</b></td>
@@ -589,15 +622,27 @@ $('#btnSaveAI').addEventListener('click', () => {
   catch (e) { toast(e.message); }
 });
 $('#btnExport').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(DB, null, 1)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(STORE, null, 1)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = `hotmix_backup_${new Date().toISOString().slice(0, 10)}.json`; a.click();
 });
 $('#importFile').addEventListener('change', async e => {
   const f = e.target.files[0]; if (!f) return;
-  try { const d = JSON.parse(await f.text()); if (!d.runs || !d.settings) throw new Error('Galat file'); if (!confirm('Abhi ka data replace ho jayega. Continue?')) return; DB = Object.assign(DEF(), d); save(); toast('Backup restore hua'); renderAll(); }
+  try {
+    const d = JSON.parse(await f.text()); if (!d.works && !d.runs) throw new Error('Galat file');
+    if (!confirm('Saare works ka abhi ka data backup se replace ho jayega. Continue?')) return;
+    localStorage.setItem(KEY, JSON.stringify(d)); load(); switchWork(STORE.current); toast('Backup restore hua');
+  }
   catch (err) { toast('Restore fail: ' + err.message); }
   e.target.value = '';
+});
+
+$('#workSel').addEventListener('change', e => { e.target.value === '__new' ? newWork() : switchWork(e.target.value); });
+$('#btnDelWork').addEventListener('click', () => {
+  const n = DB.settings.workName;
+  if (Object.keys(STORE.works).length < 2) return toast('Kam se kam ek work rehna chahiye');
+  if (prompt(`"${n}" ka poora data (register, gatepass, vehicles) delete hoga. Confirm ke liye DELETE likho:`) !== 'DELETE') return;
+  delete STORE.works[STORE.current]; switchWork(Object.keys(STORE.works)[0]); toast(`"${n}" delete hua`);
 });
 
 // ================= HOME =================
@@ -616,7 +661,7 @@ function renderHome() {
   ].map(([k, v, s]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="muted">${s}</div>` : ''}</div>`).join('');
   const rec = [...DB.runs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7);
   $('#homeRecent').innerHTML = rec.length ? `<table class="grid"><thead><tr><th>Date</th><th>Mix</th><th>Trucks</th><th>Mix MT</th><th>Bitumen MT</th><th>Bit %</th></tr></thead><tbody>${rec.map(r => `<tr><td>${dmy(r.date)}</td><td>${esc(itemLabel(r.item) || r.mix)}</td><td>${r.trucks.length}</td><td>${f2(r.totalT)}</td><td>${f3(r.bitKg / 1000)}</td><td>${f2(r.bitKg / 10 / r.totalT)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Abhi koi data nahi.</p>';
-  $('#hdrWork').textContent = DB.settings.workName || 'Settings mein kaam ka naam daalo';
+  renderWorkSelect();
   const s = DB.settings;
   if (!DB.items.length || !DB.vehicles.length || !DB.opening) {
     $('#homeCards').insertAdjacentHTML('afterbegin', `<div class="card" style="grid-column:1/-1;background:#fffaeb;border-color:#fedf89">
@@ -844,6 +889,7 @@ function renderAll() {
   if (active === 'tab-settings') renderSettings();
 }
 load();
+renderWorkSelect();
 renderChatHistory();
 renderAll();
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

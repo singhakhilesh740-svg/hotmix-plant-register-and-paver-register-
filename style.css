@@ -9,6 +9,7 @@ a{color:var(--pri2)}
 .brand{display:flex;gap:10px;align-items:center}
 .brand img{width:34px;height:34px;border-radius:8px;background:#fff}
 .brand small{display:block;opacity:.8;font-size:12px}
+.worksel{margin-left:auto;max-width:55vw;background:#fff;color:var(--ink);border:0;font-weight:600}
 .tabs{display:flex;gap:4px;overflow-x:auto;background:#fff;border-bottom:1px solid var(--line);padding:6px 10px;position:sticky;top:54px;z-index:4}
 .tabs button{border:0;background:none;padding:8px 12px;border-radius:8px;font:inherit;white-space:nowrap;cursor:pointer;color:var(--muted)}
 .tabs button.active{background:var(--chip);color:var(--pri);font-weight:600}
