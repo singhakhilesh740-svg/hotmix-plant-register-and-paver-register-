@@ -128,19 +128,17 @@
   <section id="tab-vehicles" class="tab">
     <div class="panel">
       <h3>Vehicles bulk add</h3>
-      <p class="muted">Har truck ko ek <b>fixed</b> tentative tare aur load capacity milegi (range ke andar, 10 kg round). Asli weighment milte hi edit kar dena.</p>
+      <p class="muted">Photo se tare ke liye Chat mein RC / weighbridge slip / truck list ki photo daalo. Yahan se: har truck ko range mein ek base tare milega; load tare se apne aap.</p>
       <label>Truck numbers (comma / new line)<textarea id="vehList" rows="3" placeholder="5115, 6116, 7117, 8338"></textarea></label>
       <div class="grid4">
         <label>Tare min (kg)<input type="number" id="tareMin" value="12150"></label>
         <label>Tare max (kg)<input type="number" id="tareMax" value="12350"></label>
-        <label>Net load min (kg)<input type="number" id="netMin" value="26000"></label>
-        <label>Net load max (kg)<input type="number" id="netMax" value="28000"></label>
       </div>
       <button class="btn primary" id="btnAddVeh">+ Add vehicles</button>
     </div>
     <div class="panel">
       <h3>Vehicle datasheet</h3>
-      <p class="muted">Order = truck rotation ka kram. ↑↓ se order badlo. Inactive truck generate mein nahi aayega.</p>
+      <p class="muted">Order = truck rotation ka kram. Roz ka tare base se −100…+200 kg (ek din mein ek hi). Har trip ka load = Load ±700 kg random. ↺ = tare se load dobara.</p>
       <div class="tablewrap"><table class="grid" id="vehTable"></table></div>
     </div>
   </section>

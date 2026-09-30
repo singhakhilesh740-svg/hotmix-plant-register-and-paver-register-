@@ -13,6 +13,7 @@ const DEF = () => ({
   gatepasses: [],           // {id, recvDate, invDate, invNo, supplier, tanker, grade, qty, src}
   runs: [],                 // saved plant runs
   tack: {},                 // {date: MT}
+  dayTare: {},              // {date: {veh: kg}} — one tare per truck per day
   chat: []
 });
 let DB;
@@ -126,6 +127,24 @@ function parseScadaWorkbook(wb) {
   return { meta, days };
 }
 
+// ================= TARE / LOAD RULES =================
+// Load (net) centre guessed from tare -> truck class (GVW)
+function netFromTare(tare) {
+  tare = +tare || 0;
+  const gvw = tare <= 7500 ? 16200 : tare <= 10500 ? 28000 : tare <= 13500 ? 39500 : 47500;
+  return r10(Math.max(3000, gvw - tare));
+}
+const NET_SPREAD = 700;   // har trip ka target = centre ± 700 kg
+function rnd(min, max) { return r10(min + Math.random() * (max - min)); }
+// Same truck, same day -> same tare (base −100 … +200)
+function tareFor(date, vehNo) {
+  const v = DB.vehicles.find(x => x.no === vehNo); if (!v) return 0;
+  DB.dayTare[date] = DB.dayTare[date] || {};
+  if (DB.dayTare[date][vehNo] == null) DB.dayTare[date][vehNo] = rnd(+v.tare - 100, +v.tare + 200);
+  return DB.dayTare[date][vehNo];
+}
+function tripTarget(v) { const c = +v.cap || netFromTare(v.tare); return rnd(c - NET_SPREAD, c + NET_SPREAD) / 1000; }
+
 // ================= TRUCK GENERATION =================
 // Truck dispatch = first SCADA reading where cumulative since previous dispatch >= truck load capacity.
 // Net weight = actual cumulative difference from SCADA (no random numbers).
@@ -143,8 +162,8 @@ function generateTrucks(day, opts) {
     const mixT = median(valid.map(r => r.mixT));
     const tankT = median(valid.map(tankOf).filter(x => x > 0 && x < 250));
     trucks.push({
-      veh: veh.no, time: hm(rs[toIdx].time), net: Math.round(net), tare: veh.tare,
-      gross: Math.round(net) + (+veh.tare || 0), cum: rs[toIdx].cum,
+      veh: veh.no, time: hm(rs[toIdx].time), net: r10(net), tare: tareFor(day.date, veh.no),
+      gross: r10(net) + tareFor(day.date, veh.no), cum: rs[toIdx].cum,
       mixT: mixT != null ? Math.round(mixT) : '', tankT: tankT != null ? Math.round(tankT) : '',
       aggT: '', chain: '', remark: ''
     });
@@ -161,12 +180,13 @@ function generateTrucks(day, opts) {
   } else {
     let base = 0, from = 0;
     const secs = t => { const [h, m, s] = t.split(':').map(Number); return h * 3600 + m * 60 + (s || 0); };
+    let cap = tripTarget(active[vi % active.length]);
     for (let i = 0; i < rs.length; i++) {
       const v = active[vi % active.length];
-      const cap = (+v.cap || 27000) / 1000;
       if (rs[i].cum - base >= cap) {
         push(from, i, (rs[i].cum - base) * 1000, v);
         base = rs[i].cum; from = i + 1; vi++;
+        cap = tripTarget(active[vi % active.length]);
       }
     }
     const rem = (rs[rs.length - 1].cum - base) * 1000;
@@ -181,6 +201,11 @@ function generateTrucks(day, opts) {
       }
       fromIdx = endIdx + 1;
     });
+  }
+  // r10 rounding ke baad bhi total = SCADA total
+  if (trucks.length) {
+    const tot = Math.round(rs[rs.length - 1].cum * 1000), sum = trucks.reduce((a, t) => a + t.net, 0);
+    const L = trucks[trucks.length - 1]; L.net += tot - sum; L.gross = L.net + L.tare;
   }
   // flags
   const s = DB.settings;
@@ -268,7 +293,7 @@ function renderDraft() {
   $('#genTable').innerHTML = `<thead><tr><th>#</th><th>Truck</th><th>Samay</th><th>Gate pass</th><th>Gross (kg)</th><th>Net (kg)</th><th>Tare (kg)</th><th>Cum. (MT)</th><th>Agg. temp</th><th>Tank temp</th><th>Mix temp</th><th>Remark</th></tr></thead><tbody>` +
     d.trucks.map((t, i) => `<tr class="${t.flags?.length ? 'warn' : ''}"><td>${i + 1}</td>
       <td><select data-i="${i}" data-f="veh">${vehOpts(t.veh)}</select></td>
-      <td>${t.time}</td><td>${t.gp}</td><td>${t.gross}</td><td><b>${t.net}</b></td><td>${t.tare}</td><td>${f2(t.cum)}</td>
+      <td>${t.time}</td><td>${t.gp}</td><td>${t.gross}</td><td><b>${t.net}</b></td><td><input data-i="${i}" data-f="tare" type="number" step="10" value="${t.tare}" style="width:80px"></td><td>${f2(t.cum)}</td>
       <td><input data-i="${i}" data-f="aggT" value="${esc(t.aggT)}" placeholder="manual" style="width:70px"></td>
       <td>${t.tankT}</td><td>${t.mixT}</td>
       <td class="l"><input data-i="${i}" data-f="remark" value="${esc(t.remark)}" style="width:130px">${t.flags?.length ? `<div class="flag">⚠ ${esc(t.flags.join(', '))}</div>` : ''}</td></tr>`).join('') + '</tbody>';
@@ -277,13 +302,17 @@ function renderDraft() {
 $('#genTable').addEventListener('change', e => {
   const el = e.target; const i = +el.dataset.i; const f = el.dataset.f; if (!DRAFT || isNaN(i)) return;
   const t = DRAFT.trucks[i];
-  if (f === 'veh') { const v = DB.vehicles.find(x => x.no === el.value); t.veh = v.no; t.tare = v.tare; t.gross = t.net + (+v.tare || 0); renderDraft(); }
+  if (f === 'veh') { t.veh = el.value; t.tare = tareFor(DRAFT.date, el.value); t.gross = t.net + t.tare; renderDraft(); }
+  else if (f === 'tare') {   // din ka tare badla -> us din ke saare trips mein
+    const v = r10(+el.value || 0); DB.dayTare[DRAFT.date] = DB.dayTare[DRAFT.date] || {}; DB.dayTare[DRAFT.date][t.veh] = v;
+    DRAFT.trucks.forEach(x => { if (x.veh === t.veh) { x.tare = v; x.gross = x.net + v; } }); save(); renderDraft();
+  }
   else t[f] = el.value;
 });
 $('#btnSaveRun').addEventListener('click', () => {
   if (!DRAFT) return;
   DB.runs = DB.runs.filter(r => r.id !== DRAFT.id);
-  DB.runs.push(DRAFT); save();
+  DB.runs.push(DRAFT); save();   // dayTare already stored
   toast(`${dmy(DRAFT.date)} ka register save hua (${DRAFT.trucks.length} trucks)`);
   DRAFT = null; $('#genTable').innerHTML = ''; $('#genSummary').innerHTML = ''; $('#btnSaveRun').classList.add('hidden');
   renderAll();
@@ -481,28 +510,30 @@ $('#btnAddVeh').addEventListener('click', () => {
   let added = 0;
   list.forEach(no => {
     if (DB.vehicles.some(v => v.no === no)) return;
-    DB.vehicles.push({ no, tare: randStep($('#tareMin').value, $('#tareMax').value), cap: randStep($('#netMin').value, $('#netMax').value), tentative: true, active: true });
+    const tare = randStep($('#tareMin').value, $('#tareMax').value);
+    DB.vehicles.push({ no, tare, cap: netFromTare(tare), tentative: true, active: true });
     added++;
   });
-  DB.settings.netMin = +$('#netMin').value; DB.settings.netMax = +$('#netMax').value;
   save(); $('#vehList').value = ''; toast(`${added} vehicles add hue`); renderAll();
 });
 function renderVehicles() {
   const V = DB.vehicles;
-  $('#vehTable').innerHTML = `<thead><tr><th>Kram</th><th>Truck no.</th><th>Tare (kg)</th><th>Load capacity (kg)</th><th>Status</th><th>Active</th><th></th></tr></thead><tbody>` +
+  $('#vehTable').innerHTML = `<thead><tr><th>Kram</th><th>Truck no.</th><th>Base tare (kg)</th><th>Roz ka tare</th><th>Load (kg) ±${NET_SPREAD}</th><th>Status</th><th>Active</th><th></th></tr></thead><tbody>` +
     (V.map((v, i) => `<tr><td>${i + 1}</td><td><b>${esc(v.no)}</b></td>
       <td><input type="number" step="10" data-vi="${i}" data-vf="tare" value="${v.tare}"></td>
-      <td><input type="number" step="10" data-vi="${i}" data-vf="cap" value="${v.cap}"></td>
+      <td class="muted">${+v.tare - 100}–${+v.tare + 200}</td>
+      <td><input type="number" step="10" data-vi="${i}" data-vf="cap" value="${v.cap}"> <button class="btn sm" data-vauto="${i}" title="Tare se load">↺</button></td>
       <td>${v.tentative ? '<span class="pill">tentative</span>' : '<span class="pill" style="background:#e7f6ec;color:#1e7e46">weighed</span>'}
         <button class="btn sm" data-vtog="${i}">${v.tentative ? 'Mark weighed' : 'Mark tentative'}</button></td>
       <td><input type="checkbox" data-vi="${i}" data-vf="active" ${v.active !== false ? 'checked' : ''} style="width:auto"></td>
       <td><button class="btn sm" data-vup="${i}">↑</button><button class="btn sm" data-vdn="${i}">↓</button><button class="btn sm danger" data-vdel="${i}">🗑</button></td></tr>`).join('')
-      || '<tr><td colspan="7" class="muted">Koi vehicle nahi</td></tr>') + '</tbody>';
+      || '<tr><td colspan="8" class="muted">Koi vehicle nahi</td></tr>') + '</tbody>';
 }
 $('#vehTable').addEventListener('change', e => {
   const i = e.target.dataset.vi, f = e.target.dataset.vf; if (i == null) return;
   const v = DB.vehicles[+i];
-  if (f === 'active') v.active = e.target.checked; else { v[f] = +e.target.value; if (f === 'tare') v.tentative = false; }
+  if (f === 'active') v.active = e.target.checked;
+  else { v[f] = +e.target.value; if (f === 'tare') { v.tentative = false; v.cap = netFromTare(v.tare); } }
   save(); renderVehicles();
 });
 $('#vehTable').addEventListener('click', e => {
@@ -511,6 +542,7 @@ $('#vehTable').addEventListener('click', e => {
   else if (d.vdn != null && +d.vdn < V.length - 1) { const i = +d.vdn; [V[i + 1], V[i]] = [V[i], V[i + 1]]; }
   else if (d.vdel != null) { if (!confirm('Vehicle delete karein?')) return; V.splice(+d.vdel, 1); }
   else if (d.vtog != null) { V[+d.vtog].tentative = !V[+d.vtog].tentative; }
+  else if (d.vauto != null) { V[+d.vauto].cap = netFromTare(V[+d.vauto].tare); }
   else return;
   save(); renderVehicles();
 });
@@ -663,11 +695,12 @@ $('#chatFile').addEventListener('change', async e => {
   appendMsg('user', isPdf ? `📄 ${esc(f.name)}` : `<img src="${dataUrl}">`);
   DB.chat.push({ role: 'user', html: `📷 ${esc(f.name)}`, t: Date.now() }); save();
   if (!cfg.key) return chatPush('bot', 'Photo padhne ke liye Settings → Chatbot mein Claude (ya Gemini) API key daalo. Tab tak Bitumen tab mein manual entry kar sakte ho.');
-  const wait = appendMsg('bot', '…gatepass padh raha hoon');
+  const wait = appendMsg('bot', '…photo padh raha hoon');
   try {
     const b64 = dataUrl.split(',')[1]; const mime = dataUrl.slice(5, dataUrl.indexOf(';'));
     const prompt = `This is a photo of a document at an Indian hot mix plant. Classify and extract. Return ONLY JSON:
-{"doc_type":"gatepass"|"scada"|"other",
+{"doc_type":"gatepass"|"vehicle_tare"|"scada"|"other",
+ "vehicles":[{"vehicle_no":"e.g. GJ20V5115, no spaces","tare_kg":number}]  (only for vehicle_tare: weighbridge slip, RC book unladen weight, or a handwritten/printed list of trucks with tare/empty weight. Convert tonnes to kg),
  "supplier":"IOCL/BPCL/HPCL/other name",
  "invoice_no":"tax invoice number (e.g. GJ5534275388 or 4541387410)",
  "invoice_date":"YYYY-MM-DD",
@@ -681,9 +714,43 @@ $('#chatFile').addEventListener('change', async e => {
     wait.remove();
     let j; try { j = JSON.parse(txt.replace(/```json|```/g, '').trim()); } catch (e) { throw new Error('AI ka jawab samajh nahi aaya: ' + txt.slice(0, 200)); }
     if (j.doc_type === 'scada') return chatPush('bot', 'Ye SCADA report lag rahi hai. Photo se truck-wise register sahi nahi banta — SCADA ki Excel file (DRUM_MIX_….xlsx) upload karo.');
+    if (j.doc_type === 'vehicle_tare') return showVehicleConfirm(j);
     showGatepassConfirm(j);
   } catch (err) { wait.remove(); chatPush('bot', 'AI error: ' + esc(err.message)); }
 });
+function matchVehicle(no) {
+  no = normVeh(no); const last4 = (no.match(/(\d{1,4})$/) || [])[1] || no;
+  return DB.vehicles.find(v => v.no === no) || DB.vehicles.find(v => v.no === last4 || v.no.endsWith(last4));
+}
+function showVehicleConfirm(j) {
+  const list = (j.vehicles || []).filter(x => x && x.vehicle_no);
+  if (!list.length) return chatPush('bot', 'Photo mein truck no. aur tare nahi mila. Saaf photo daalo ya Vehicles tab mein manual daalo.');
+  const box = document.createElement('div'); box.className = 'confirm';
+  box.innerHTML = `<b>Vehicle tare reading</b> <span class="pill ai">AI · ${esc(j.confidence || '?')}</span> — check karke Save dabao
+    <div class="tablewrap"><table class="grid"><thead><tr><th>Register mein truck no.</th><th>Base tare (kg)</th><th>Load (kg)</th><th>Status</th></tr></thead><tbody>
+    ${list.map((x, k) => { const ex = matchVehicle(x.vehicle_no); const full = normVeh(x.vehicle_no); const no = ex ? ex.no : full; const tare = r10(+x.tare_kg || 0);
+      return `<tr><td><input data-k="${k}" data-n="no" value="${esc(no)}" style="width:120px"></td><td><input data-k="${k}" data-n="tare" type="number" step="10" value="${tare}"></td>
+      <td class="muted">${netFromTare(tare)} ±${NET_SPREAD}</td><td>${ex ? 'update' : 'naya'}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <p class="muted">Register mein chhota no. (jaise 5115) chahiye to upar edit kar do. Roz ka tare = base −100 se +200 kg.</p>
+    ${j.notes ? `<div class="muted">Note: ${esc(j.notes)}</div>` : ''}
+    <div class="row"><button class="btn success">✅ Vehicles save karo</button></div>`;
+  box.querySelector('button').onclick = () => {
+    let add = 0, upd = 0;
+    list.forEach((_, k) => {
+      const no = normVeh(box.querySelector(`[data-k="${k}"][data-n="no"]`).value);
+      const tare = r10(+box.querySelector(`[data-k="${k}"][data-n="tare"]`).value || 0);
+      if (!no || !tare) return;
+      const ex = DB.vehicles.find(v => v.no === no);
+      if (ex) { ex.tare = tare; ex.cap = netFromTare(tare); ex.tentative = false; upd++; }
+      else { DB.vehicles.push({ no, tare, cap: netFromTare(tare), tentative: false, active: true }); add++; }
+    });
+    save(); renderAll();
+    box.innerHTML = `✅ ${add} naye, ${upd} update`;
+    chatPush('bot', `Vehicles save hue: ${add} naye, ${upd} update. Vehicles tab mein order check kar lo.`);
+  };
+  appendMsg('bot', '', box);
+}
 function showGatepassConfirm(j) {
   const box = document.createElement('div'); box.className = 'confirm';
   const v = { recvDate: j.received_date || j.invoice_date || '', invDate: j.invoice_date || '', invNo: j.invoice_no || '', supplier: j.supplier || '', tanker: normVeh(j.tanker_no), grade: j.grade || 'VG-30', qty: j.qty_mt ?? '' };
