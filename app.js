@@ -6,7 +6,7 @@
 const KEY = 'hmp_register_v1';
 const AIKEY = 'hmp_ai_v1';
 const DEF = () => ({
-  settings: { workName: '', agency: '', plant: '', division: '', gpStart: 1, tempMin: 140, tempMax: 165 },
+  settings: { workName: '', agency: '', plant: '', division: '', gpStart: 1, tempMin: 140, tempMax: 165, diffMin: 0.7, diffMax: 1.1 },
   items: [],
   vehicles: [],
   opening: null,            // {date, qty}
@@ -18,7 +18,7 @@ const DEF = () => ({
 });
 let DB;
 function load() {
-  try { DB = Object.assign(DEF(), JSON.parse(localStorage.getItem(KEY) || '{}')); }
+  try { const d = JSON.parse(localStorage.getItem(KEY) || '{}'); DB = Object.assign(DEF(), d); DB.settings = Object.assign(DEF().settings, d.settings || {}); }
   catch (e) { DB = DEF(); }
 }
 function save() {
@@ -202,20 +202,24 @@ function generateTrucks(day, opts) {
       fromIdx = endIdx + 1;
     });
   }
-  // r10 rounding ke baad bhi total = SCADA total
-  if (trucks.length) {
-    const tot = Math.round(rs[rs.length - 1].cum * 1000), sum = trucks.reduce((a, t) => a + t.net, 0);
-    const L = trucks[trucks.length - 1]; L.net += tot - sum; L.gross = L.net + L.tare;
-  }
-  // flags
-  const s = DB.settings;
+  // Register total SCADA se thoda kam (practical weighbridge vs SCADA farak) — kabhi zyada nahi
+  const dMin = (+DB.settings.diffMin || 0) / 100, dMax = (+DB.settings.diffMax || 0) / 100;
+  let run = 0;
   trucks.forEach(t => {
-    const f = [];
-    if (t.mixT !== '' && (t.mixT < +s.tempMin || t.mixT > +s.tempMax)) f.push(`Mix temp ${t.mixT}°C range se bahar`);
-    t.flags = f;
+    t.scadaNet = t.net;
+    const d = dMin + Math.random() * Math.max(0, dMax - dMin);
+    t.net = r10(t.net * (1 - d)); t.gross = t.net + t.tare;
+    run += t.net; t.regCum = run / 1000;
   });
+  trucks.forEach(setFlags);
   return trucks;
 }
+function setFlags(t) {
+  const s = DB.settings, f = [], m = +t.mixT;
+  if (t.mixT !== '' && (m < +s.tempMin || m > +s.tempMax)) f.push(`Mix temp ${t.mixT}°C range se bahar`);
+  t.flags = f;
+}
+const regTotal = r => r.trucks.reduce((a, t) => a + (+t.net || 0), 0) / 1000;
 function nextGatePass(excludeRunId) {
   let mx = (+DB.settings.gpStart || 1) - 1;
   DB.runs.forEach(r => { if (r.id !== excludeRunId) r.trucks.forEach(t => { if (+t.gp > mx) mx = +t.gp; }); });
@@ -285,7 +289,8 @@ function renderDraft() {
   const sumNet = d.trucks.reduce((a, t) => a + t.net, 0);
   $('#genSummary').innerHTML = `<div class="sum">
     <span>SCADA kul mix: <b>${f2(d.totalT)} MT</b></span>
-    <span>Trucks ka net total: <b>${f2(sumNet / 1000)} MT</b></span>
+    <span>Register (trucks) total: <b>${f2(sumNet / 1000)} MT</b></span>
+    <span>Farak: <b>${f2(d.totalT - sumNet / 1000)} MT</b> (${d.totalT ? f2((d.totalT - sumNet / 1000) / d.totalT * 100) : 0}%)</span>
     <span>Trucks: <b>${d.trucks.length}</b></span>
     <span>Bitumen (SCADA): <b>${f3(d.bitKg / 1000)} MT</b> (${d.totalT ? f2(d.bitKg / 10 / d.totalT) : 0}%)</span>
     <span>Plant chalu: <b>${hm(d.start)}–${hm(d.end)}</b></span></div>`;
@@ -293,9 +298,10 @@ function renderDraft() {
   $('#genTable').innerHTML = `<thead><tr><th>#</th><th>Truck</th><th>Samay</th><th>Gate pass</th><th>Gross (kg)</th><th>Net (kg)</th><th>Tare (kg)</th><th>Cum. (MT)</th><th>Agg. temp</th><th>Tank temp</th><th>Mix temp</th><th>Remark</th></tr></thead><tbody>` +
     d.trucks.map((t, i) => `<tr class="${t.flags?.length ? 'warn' : ''}"><td>${i + 1}</td>
       <td><select data-i="${i}" data-f="veh">${vehOpts(t.veh)}</select></td>
-      <td>${t.time}</td><td>${t.gp}</td><td>${t.gross}</td><td><b>${t.net}</b></td><td><input data-i="${i}" data-f="tare" type="number" step="10" value="${t.tare}" style="width:80px"></td><td>${f2(t.cum)}</td>
+      <td>${t.time}</td><td>${t.gp}</td><td>${t.gross}</td><td><b>${t.net}</b></td><td><input data-i="${i}" data-f="tare" type="number" step="10" value="${t.tare}" style="width:80px"></td><td>${f2(t.regCum ?? t.cum)}</td>
       <td><input data-i="${i}" data-f="aggT" value="${esc(t.aggT)}" placeholder="manual" style="width:70px"></td>
-      <td>${t.tankT}</td><td>${t.mixT}</td>
+      <td><input data-i="${i}" data-f="tankT" type="number" value="${esc(t.tankT)}" style="width:62px"></td>
+      <td><input data-i="${i}" data-f="mixT" type="number" value="${esc(t.mixT)}" style="width:62px"></td>
       <td class="l"><input data-i="${i}" data-f="remark" value="${esc(t.remark)}" style="width:130px">${t.flags?.length ? `<div class="flag">⚠ ${esc(t.flags.join(', '))}</div>` : ''}</td></tr>`).join('') + '</tbody>';
   $('#btnSaveRun').classList.remove('hidden');
 }
@@ -307,6 +313,7 @@ $('#genTable').addEventListener('change', e => {
     const v = r10(+el.value || 0); DB.dayTare[DRAFT.date] = DB.dayTare[DRAFT.date] || {}; DB.dayTare[DRAFT.date][t.veh] = v;
     DRAFT.trucks.forEach(x => { if (x.veh === t.veh) { x.tare = v; x.gross = x.net + v; } }); save(); renderDraft();
   }
+  else if (f === 'mixT' || f === 'tankT') { t[f] = el.value === '' ? '' : +el.value; setFlags(t); renderDraft(); }
   else t[f] = el.value;
 });
 $('#btnSaveRun').addEventListener('click', () => {
@@ -326,14 +333,21 @@ function runsInRange() {
 function renderSavedRuns() {
   const runs = runsInRange();
   if (!runs.length) { $('#savedRuns').innerHTML = '<p class="muted">Abhi koi register save nahi hai.</p>'; return; }
-  $('#savedRuns').innerHTML = runs.map(r => `<details class="dayblock"><summary>${dmy(r.date)} · ${esc(itemLabel(r.item) || r.mix)} · ${r.trucks.length} trucks · ${f2(r.totalT)} MT · bitumen ${f3(r.bitKg / 1000)} MT
+  $('#savedRuns').innerHTML = runs.map(r => `<details class="dayblock"><summary>${dmy(r.date)} · ${esc(itemLabel(r.item) || r.mix)} · ${r.trucks.length} trucks · register ${f2(regTotal(r))} MT (SCADA ${f2(r.totalT)}) · bitumen ${f3(r.bitKg / 1000)} MT
       <span class="pill">${r.src === 'tripper' ? 'SCADA tripper' : 'SCADA cumulative'}</span></summary>
       <div class="tablewrap"><table class="grid"><thead><tr><th>Truck</th><th>Samay</th><th>GP</th><th>Gross</th><th>Net</th><th>Tare</th><th>Agg</th><th>Tank</th><th>Mix</th><th>Remark</th></tr></thead><tbody>
       ${r.trucks.map(t => `<tr><td>${esc(t.veh)}</td><td>${t.time}</td><td>${t.gp}</td><td>${t.gross}</td><td>${t.net}</td><td>${t.tare}</td><td>${esc(t.aggT)}</td><td>${t.tankT}</td><td>${t.mixT}</td><td class="l">${esc(t.remark)}</td></tr>`).join('')}
       </tbody></table></div>
-      <div class="row"><button class="btn sm danger" data-del="${r.id}">🗑 Delete</button></div></details>`).join('');
+      <div class="row"><button class="btn sm" data-edit="${r.id}">✏️ Edit</button><button class="btn sm danger" data-del="${r.id}">🗑 Delete</button></div></details>`).join('');
 }
 $('#savedRuns').addEventListener('click', e => {
+  const eid = e.target.dataset.edit;
+  if (eid) {
+    DRAFT = JSON.parse(JSON.stringify(DB.runs.find(r => r.id === eid)));
+    let c = 0; DRAFT.trucks.forEach(t => { c += +t.net; t.regCum = c / 1000; setFlags(t); });
+    $('#genPanel').classList.remove('hidden'); renderDraft(); $('#genPanel').scrollIntoView({ behavior: 'smooth' });
+    return toast('Edit karke "Register mein Save" dabao');
+  }
   const id = e.target.dataset.del; if (!id) return;
   if (!confirm('Ye din ka register delete karna hai?')) return;
   DB.runs = DB.runs.filter(r => r.id !== id); save(); renderAll();
@@ -352,7 +366,7 @@ function printP5(runs) {
       const last = i === r.trucks.length - 1;
       rowsHtml += `<tr><td>${i + 1}</td><td>${i === 0 ? dmy(r.date) : ''}</td><td>${i === 0 ? esc(itemLabel(r.item) || r.mix) : ''}</td>
       <td>${esc(t.veh)}</td><td>${t.time}</td><td>${t.gp}</td><td>${t.gross}</td><td>${t.net}</td>
-      <td class="tot">${last ? f2(r.totalT) + ' MT' : ''}</td><td>${t.tare}</td><td></td><td></td><td>${esc(t.remark)}</td></tr>`;
+      <td class="tot">${last ? f2(regTotal(r)) + ' MT' : ''}</td><td>${t.tare}</td><td></td><td></td><td>${esc(t.remark)}</td></tr>`;
     });
     rowsHtml += `<tr><td colspan="13" style="height:8px"></td></tr>`;
   });
@@ -394,7 +408,7 @@ $('#btnXlsPlant').addEventListener('click', () => {
   const p5 = [['Kramank', 'Tarikh', 'Item', 'Truck no.', 'Samay', 'Gate pass no.', 'Gross (kg)', 'Net (kg)', 'Din ka kul (MT)', 'Tare (kg)', 'Remark']];
   const p3 = [['Tarikh', 'Samay', 'Mix', 'Truck no.', 'Agg temp', 'Tank temp', 'Mix temp', 'Chainage', 'Remark']];
   runs.forEach(r => r.trucks.forEach((t, i) => {
-    p5.push([i + 1, dmy(r.date), itemLabel(r.item) || r.mix, t.veh, t.time, t.gp, t.gross, t.net, i === r.trucks.length - 1 ? +f2(r.totalT) : '', t.tare, t.remark]);
+    p5.push([i + 1, dmy(r.date), itemLabel(r.item) || r.mix, t.veh, t.time, t.gp, t.gross, t.net, i === r.trucks.length - 1 ? +f2(regTotal(r)) : '', t.tare, t.remark]);
     p3.push([dmy(r.date), t.time, r.mix, t.veh, t.aggT, t.tankT, t.mixT, t.chain, t.remark]);
   }));
   const wb = XLSX.utils.book_new();
