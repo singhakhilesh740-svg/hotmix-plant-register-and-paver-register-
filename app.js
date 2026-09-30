@@ -806,8 +806,8 @@ function localAnswer(q) {
   }
   return null;
 }
-$('#chatFile').addEventListener('change', async e => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+async function handleChatFile(f) {
+  if (!f) return;
   if (/\.(xlsx|xls|csv)$/i.test(f.name)) {
     chatPush('user', `📄 ${esc(f.name)}`);
     try {
@@ -853,7 +853,33 @@ $('#chatFile').addEventListener('change', async e => {
     if (j.doc_type === 'vehicle_tare') return showVehicleConfirm(j);
     showGatepassConfirm(j);
   } catch (err) { wait.remove(); chatPush('bot', 'AI error: ' + esc(err.message)); }
+}
+$('#chatFile').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  for (const f of files) await handleChatFile(f);
 });
+// Drag & drop + Ctrl+V paste
+(() => {
+  const chat = $('.chat'); let depth = 0;
+  const ok = f => /^image\//.test(f.type) || /\.(pdf|xlsx|xls|csv|jpe?g|png|webp|heic)$/i.test(f.name);
+  chat.addEventListener('dragenter', e => { if (!e.dataTransfer?.types?.includes('Files')) return; e.preventDefault(); depth++; chat.classList.add('dragging'); });
+  chat.addEventListener('dragover', e => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  chat.addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; chat.classList.remove('dragging'); } });
+  chat.addEventListener('drop', async e => {
+    e.preventDefault(); depth = 0; chat.classList.remove('dragging');
+    const files = [...(e.dataTransfer?.files || [])];
+    const good = files.filter(ok); if (files.length > good.length) toast('Sirf photo, PDF ya Excel chalegi');
+    for (const f of good) await handleChatFile(f);
+  });
+  // chat ke bahar file giri to browser use khol na de
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => { if (!e.target.closest('.chat')) e.preventDefault(); });
+  $('#chatInput').addEventListener('paste', async e => {
+    const files = [...(e.clipboardData?.files || [])].filter(ok);
+    if (!files.length) return; e.preventDefault();
+    for (const f of files) await handleChatFile(f);
+  });
+})();
 function matchVehicle(no) {
   no = normVeh(no); const last4 = (no.match(/(\d{1,4})$/) || [])[1] || no;
   return DB.vehicles.find(v => v.no === no) || DB.vehicles.find(v => v.no === last4 || v.no.endsWith(last4));
