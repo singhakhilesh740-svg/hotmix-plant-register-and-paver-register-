@@ -618,7 +618,23 @@ function itemParams(it) {
   const dTh = /SDBC/.test(n) ? 25 : /BSG|BUSG/.test(n) ? 37.5 : /BC/.test(n) ? 40 : 50;
   return { den: +it?.den || dDen, th: +it?.th || dTh, tack: +it?.tack || 0 };
 }
-function tackAuto(date) {   // us din plant se bane item par tack coat
+function itemEstQty(it) {   // Settings ka estimate MT, warna Progress tab ki layer ka estimate MT
+  if (+it?.estQty) return +it.estQty;
+  const l = (DB.progress?.layers || []).find(x => String(x.t).toUpperCase() === String(it?.name).toUpperCase());
+  return +(l?.est?.mt) || 0;
+}
+// Poore item ka tack coat daamar ek hi baar — item ke pehle din plant se issue
+function tackIssues() {
+  const out = [];
+  DB.items.forEach(it => {
+    const p = itemParams(it), q = itemEstQty(it); if (!p.tack || !q) return;
+    const days = DB.runs.filter(r => r.item == it.code).map(r => r.date).sort(); if (!days.length) return;
+    const area = q / (p.den * p.th / 1000);
+    out.push({ code: it.code, name: it.name, date: days[0], estQty: q, area, kg: area * p.tack, rate: p.tack, den: p.den, th: p.th });
+  });
+  return out;
+}
+function tackUse(date) {    // us din paver par asli vaparash (us din bane mix ke hisaab se)
   const parts = [];
   DB.runs.filter(r => r.date === date).forEach(r => {
     const it = DB.items.find(i => i.code == r.item); if (!it) return;
@@ -630,10 +646,10 @@ function tackAuto(date) {   // us din plant se bane item par tack coat
   });
   return { kg: parts.reduce((a, x) => a + x.kg, 0), parts };
 }
-function tackFor(date) {    // manual likha ho to wahi, warna auto
-  const a = tackAuto(date), man = DB.tack[date];
+function tackFor(date) {    // Plant P-1 col 7: manual likha ho to wahi, warna us din ka bulk issue
+  const iss = tackIssues().filter(x => x.date === date), man = DB.tack[date];
   const manual = man !== undefined && man !== null && man !== '';
-  return { mt: manual ? +man : a.kg / 1000, auto: !manual, parts: a.parts };
+  return { mt: manual ? +man : iss.reduce((a, x) => a + x.kg, 0) / 1000, auto: !manual, issues: iss };
 }
 function addDays(iso, n) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 const SHIFT_DAYS = 3;
@@ -798,7 +814,7 @@ function renderVehicles() {
         <button class="btn sm" data-vtog="${i}">${v.tentative ? 'Mark weighed' : 'Mark tentative'}</button></td>
       <td><input type="checkbox" data-vi="${i}" data-vf="active" ${v.active !== false ? 'checked' : ''} style="width:auto"></td>
       <td><button class="btn sm" data-vup="${i}">↑</button><button class="btn sm" data-vdn="${i}">↓</button><button class="btn sm danger" data-vdel="${i}">🗑</button></td></tr>`).join('')
-      || '<tr><td colspan="8" class="muted">Koi vehicle nahi</td></tr>') + '</tbody>';
+      || '<tr><td colspan="10" class="muted">Koi vehicle nahi</td></tr>') + '</tbody>';
 }
 $('#vehTable').addEventListener('change', e => {
   const i = e.target.dataset.vi, f = e.target.dataset.vf; if (i == null) return;
@@ -821,8 +837,10 @@ $('#vehTable').addEventListener('click', e => {
 // ================= SETTINGS =================
 function renderSettings() {
   $$('#setForm [name]').forEach(i => { if (DB.settings[i.name] != null) i.value = DB.settings[i.name]; });
-  $('#itemTable').innerHTML = `<thead><tr><th>Item no.</th><th>Mix</th><th>Design bitumen %</th><th>Thickness (mm)</th><th>Density</th><th>1 T = sq.m</th><th>Tack coat (kg/sq.m)</th><th></th></tr></thead><tbody>` +
-    (DB.items.map((it, k) => { const p = itemParams(it); return `<tr><td>${esc(it.code)}</td><td>${esc(it.name)}</td><td>${it.pct}</td><td>${p.th}</td><td>${p.den}</td><td>${f2(1 / (p.den * p.th / 1000))}</td><td>${p.tack ? p.tack : '<span class="muted">nahi</span>'}</td><td><button class="btn sm" data-edit_it="${k}">✏️</button> <button class="btn sm danger" data-delit="${k}">🗑</button></td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">Item add karo (jaise 10 – BM – 3.3%)</td></tr>') + '</tbody>';
+  $('#itemTable').innerHTML = `<thead><tr><th>Item no.</th><th>Mix</th><th>Design bitumen %</th><th>Thickness (mm)</th><th>Density</th><th>1 T = sq.m</th><th>Tack coat (kg/sq.m)</th><th>Estimate qty (MT)</th><th>Tack coat daamar (poora kaam)</th><th></th></tr></thead><tbody>` +
+    (DB.items.map((it, k) => { const p = itemParams(it); return `<tr><td>${esc(it.code)}</td><td>${esc(it.name)}</td><td>${it.pct}</td><td>${p.th}</td><td>${p.den}</td><td>${f2(1 / (p.den * p.th / 1000))}</td><td>${p.tack ? p.tack : '<span class="muted">nahi</span>'}</td>
+      <td>${itemEstQty(it) ? f2(itemEstQty(it)) + (it.estQty ? '' : ' <span class="muted">(Progress se)</span>') : '—'}</td>
+      <td>${p.tack && itemEstQty(it) ? f3(itemEstQty(it) / (p.den * p.th / 1000) * p.tack / 1000) + ' MT' : '—'}</td><td><button class="btn sm" data-edit_it="${k}">✏️</button> <button class="btn sm danger" data-delit="${k}">🗑</button></td></tr>`; }).join('') || '<tr><td colspan="10" class="muted">Item add karo (jaise 10 – BM – 3.3%)</td></tr>') + '</tbody>';
   const a = aiCfg(); $('#aiProvider').value = a.provider || 'claude'; $('#aiKey').value = a.key || ''; $('#aiModel').value = a.model || defModel(a.provider || 'claude');
 }
 $('#btnSaveSet').addEventListener('click', () => {
@@ -838,14 +856,14 @@ $('#btnSaveSet').addEventListener('click', () => {
 $('#btnAddItem').addEventListener('click', () => {
   const code = $('#itCode').value.trim(), name = $('#itName').value.trim().toUpperCase(), pct = +$('#itPct').value;
   if (!code || !name) return toast('Item no. aur mix daalo');
-  const th = +$('#itTh').value || 0, den = +$('#itDen').value || 0, tack = +$('#itTack').value || 0;
-  DB.items = DB.items.filter(i => i.code !== code); DB.items.push({ code, name, pct, th, den, tack });
+  const th = +$('#itTh').value || 0, den = +$('#itDen').value || 0, tack = +$('#itTack').value || 0, estQty = +$('#itEst').value || 0;
+  DB.items = DB.items.filter(i => i.code !== code); DB.items.push({ code, name, pct, th, den, tack, estQty });
   DB.runs.forEach(r => { if (r.item == code) r.mix = name; });   // naam badla to saved register mein bhi
-  save(); ['#itCode', '#itName', '#itPct', '#itTh', '#itDen', '#itTack'].forEach(k => $(k).value = ''); renderAll();
+  save(); ['#itCode', '#itName', '#itPct', '#itTh', '#itDen', '#itTack', '#itEst'].forEach(k => $(k).value = ''); renderAll();
 });
 $('#itemTable').addEventListener('click', e => {
   const ek = e.target.dataset.edit_it;
-  if (ek != null) { const it = DB.items[+ek]; $('#itCode').value = it.code; $('#itName').value = it.name; $('#itPct').value = it.pct; { const p = itemParams(it); $('#itTh').value = p.th; $('#itDen').value = p.den; $('#itTack').value = it.tack || ''; } $('#itName').focus(); return toast('Badal kar "+ Add" dabao'); }
+  if (ek != null) { const it = DB.items[+ek]; $('#itCode').value = it.code; $('#itName').value = it.name; $('#itPct').value = it.pct; { const p = itemParams(it); $('#itTh').value = p.th; $('#itDen').value = p.den; $('#itTack').value = it.tack || ''; $('#itEst').value = it.estQty || ''; } $('#itName').focus(); return toast('Badal kar "+ Add" dabao'); }
   const k = e.target.dataset.delit; if (k == null) return; DB.items.splice(+k, 1); save(); renderAll(); });
 function defModel(p) { return p === 'gemini' ? 'gemini-2.5-flash' : 'claude-sonnet-5-5'; }
 $('#aiProvider').addEventListener('change', e => { $('#aiModel').value = defModel(e.target.value); });

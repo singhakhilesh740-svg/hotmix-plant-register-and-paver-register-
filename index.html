@@ -152,7 +152,7 @@
   <section id="tab-paver" class="tab">
     <div class="panel">
       <h3>Paver Parishisht-1 — Tack coat / spray ke daamar ki nondh</h3>
-      <p class="muted">Jis din tack coat wala item (Settings mein tack coat rate &gt; 0) plant se bana, us din: area = mix jaththo ÷ (density × thickness), daamar = area × rate. Yahi daamar Plant Parishisht-1 ke col 7 (છાંટવા માટે) mein bhi nikalta hai.</p>
+      <p class="muted">Tack coat wale item ka poora daamar (estimate MT ÷ (density × thickness) × rate) item ke pehle din ek hi baar Plant Parishisht-1 col 7 se aata hai. Phir har din us din bane mix ke area × rate jitna vaparash ghat-ta hai; balance agle din ughdati silak mein.</p>
       <div class="row">
         <label>Date se<input type="date" id="pvFrom"></label>
         <label>Date tak<input type="date" id="pvTo"></label>
@@ -235,6 +235,7 @@
         <label>Thickness (mm)<input id="itTh" type="number" step="0.5" placeholder="50"></label>
         <label>Density<input id="itDen" type="number" step="0.05" placeholder="BM 2.2 / SDBC 2.3"></label>
         <label>Tack coat (kg/sq.m) — estimate se<input id="itTack" type="number" step="0.01" placeholder="0 = tack coat nahi"></label>
+        <label>Estimate qty (MT)<input id="itEst" type="number" step="0.01" placeholder="jaise BM 4781"></label>
         <div class="end"><button class="btn primary" id="btnAddItem">+ Add</button></div>
       </div>
       <div class="tablewrap"><table class="grid" id="itemTable"></table></div>
