@@ -171,11 +171,15 @@
       <div class="tablewrap"><table class="grid" id="itemTable"></table></div>
     </div>
     <div class="panel">
-      <h3>Chatbot (AI) — Gemini API key</h3>
-      <p class="muted">Key sirf isi phone/computer mein save hoti hai, GitHub code mein nahi jaati. Free key: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a></p>
+      <h3>Chatbot (AI) — API key</h3>
+      <p class="muted">Key sirf isi phone/computer ke browser mein save hoti hai, GitHub code mein nahi jaati.<br>
+        Claude key: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> (prepaid credit lagta hai) ·
+        Gemini key (free): <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a></p>
       <div class="grid4">
-        <label>API key<input id="aiKey" type="password" placeholder="AIza…"></label>
-        <label>Model<input id="aiModel" value="gemini-2.5-flash"></label>
+        <label>AI provider<select id="aiProvider"><option value="claude">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option></select></label>
+        <label>API key<input id="aiKey" type="password" placeholder="sk-ant-… / AIza…"></label>
+        <label>Model<input id="aiModel" list="aiModels" value="claude-sonnet-5-5"></label>
+        <datalist id="aiModels"><option value="claude-sonnet-5-5"><option value="claude-haiku-4-5-20251001"><option value="claude-opus-5-5"><option value="gemini-2.5-flash"></datalist>
         <div class="end"><button class="btn primary" id="btnSaveAI">Save</button></div>
       </div>
     </div>

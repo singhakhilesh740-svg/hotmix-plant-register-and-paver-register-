@@ -19,7 +19,7 @@ R&B hot mix plant ke registers — SCADA report aur bitumen gatepass se.
 - Hot aggregate temp SCADA mein nahi hota — manual.
 
 ## Chatbot
-Settings mein Gemini API key (free: aistudio.google.com) — sirf device par save hoti hai.
+Settings mein AI provider chuno — Claude (console.anthropic.com key) ya Gemini (aistudio.google.com). Key sirf device par save hoti hai.
 
 ## Data
 Browser (localStorage) mein. Settings → Backup download se JSON backup lete raho.

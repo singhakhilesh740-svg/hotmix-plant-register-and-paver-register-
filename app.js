@@ -520,7 +520,7 @@ function renderSettings() {
   $$('#setForm [name]').forEach(i => { if (DB.settings[i.name] != null) i.value = DB.settings[i.name]; });
   $('#itemTable').innerHTML = `<thead><tr><th>Item no.</th><th>Mix</th><th>Design bitumen %</th><th></th></tr></thead><tbody>` +
     (DB.items.map((it, k) => `<tr><td>${esc(it.code)}</td><td>${esc(it.name)}</td><td>${it.pct}</td><td><button class="btn sm danger" data-delit="${k}">🗑</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Item add karo (jaise 10 – BM – 3.3%)</td></tr>') + '</tbody>';
-  const a = aiCfg(); $('#aiKey').value = a.key || ''; $('#aiModel').value = a.model || 'gemini-2.5-flash';
+  const a = aiCfg(); $('#aiProvider').value = a.provider || 'claude'; $('#aiKey').value = a.key || ''; $('#aiModel').value = a.model || defModel(a.provider || 'claude');
 }
 $('#btnSaveSet').addEventListener('click', () => {
   $$('#setForm [name]').forEach(i => DB.settings[i.name] = i.type === 'number' ? +i.value : i.value.trim());
@@ -533,8 +533,13 @@ $('#btnAddItem').addEventListener('click', () => {
   save(); $('#itCode').value = $('#itName').value = $('#itPct').value = ''; renderAll();
 });
 $('#itemTable').addEventListener('click', e => { const k = e.target.dataset.delit; if (k == null) return; DB.items.splice(+k, 1); save(); renderAll(); });
+function defModel(p) { return p === 'gemini' ? 'gemini-2.5-flash' : 'claude-sonnet-5-5'; }
+$('#aiProvider').addEventListener('change', e => { $('#aiModel').value = defModel(e.target.value); });
 $('#btnSaveAI').addEventListener('click', () => {
-  try { localStorage.setItem(AIKEY, JSON.stringify({ key: $('#aiKey').value.trim(), model: $('#aiModel').value.trim() || 'gemini-2.5-flash' })); toast('AI settings save hui'); }
+  const provider = $('#aiProvider').value;
+  let model = $('#aiModel').value.trim();
+  if (!model || (provider === 'claude') !== model.startsWith('claude')) model = defModel(provider);
+  try { localStorage.setItem(AIKEY, JSON.stringify({ provider, key: $('#aiKey').value.trim(), model })); $('#aiModel').value = model; toast('AI settings save hui'); }
   catch (e) { toast(e.message); }
 });
 $('#btnExport').addEventListener('click', () => {
@@ -599,12 +604,12 @@ $('#chatForm').addEventListener('submit', async e => {
   const ans = localAnswer(q);
   if (ans) return chatPush('bot', ans);
   const cfg = aiCfg();
-  if (!cfg.key) return chatPush('bot', 'Ye sawaal samajh nahi aaya. AI jawab ke liye Settings mein Gemini API key daalo. Abhi main balance, production aur gatepass ke sawaal samajhta hoon.');
+  if (!cfg.key) return chatPush('bot', 'Ye sawaal samajh nahi aaya. AI jawab ke liye Settings mein Claude (ya Gemini) API key daalo. Abhi main balance, production aur gatepass ke sawaal samajhta hoon.');
   const wait = appendMsg('bot', '…soch raha hoon');
   try {
     const ctx = JSON.stringify({ settings: DB.settings, opening: DB.opening, balanceMT: currentBalance(), gatepasses: DB.gatepasses.map(({ id, ...g }) => g),
       days: DB.runs.map(r => ({ date: r.date, mix: r.mix, item: r.item, trucks: r.trucks.length, mixMT: r.totalT, bitumenMT: r.bitKg / 1000 })), ledger: buildLedger().map(d => ({ date: d.date, open: d.open, rcv: d.rcv, cons: d.cons, close: d.close })) });
-    const txt = await gemini([{ text: `You are an assistant inside a Gujarat R&B hot mix plant register app. Answer briefly in Hinglish using ONLY this app data (JSON). If data is missing, say so.\nDATA: ${ctx}\nQUESTION: ${q}` }], false);
+    const txt = await aiAsk(`You are an assistant inside a Gujarat R&B hot mix plant register app. Answer briefly in Hinglish using ONLY this app data (JSON). If data is missing, say so.\nDATA: ${ctx}\nQUESTION: ${q}`, null, false);
     wait.remove(); chatPush('bot', esc(txt));
   } catch (err) { wait.remove(); chatPush('bot', 'AI error: ' + esc(err.message)); }
 });
@@ -657,7 +662,7 @@ $('#chatFile').addEventListener('change', async e => {
   try { dataUrl = isPdf ? await fileToDataUrl(f) : await shrinkImage(f, 1800); } catch (err) { return chatPush('bot', 'File nahi khuli: ' + esc(err.message)); }
   appendMsg('user', isPdf ? `📄 ${esc(f.name)}` : `<img src="${dataUrl}">`);
   DB.chat.push({ role: 'user', html: `📷 ${esc(f.name)}`, t: Date.now() }); save();
-  if (!cfg.key) return chatPush('bot', 'Photo padhne ke liye Settings → Chatbot mein Gemini API key daalo (free milti hai). Tab tak Bitumen tab mein manual entry kar sakte ho.');
+  if (!cfg.key) return chatPush('bot', 'Photo padhne ke liye Settings → Chatbot mein Claude (ya Gemini) API key daalo. Tab tak Bitumen tab mein manual entry kar sakte ho.');
   const wait = appendMsg('bot', '…gatepass padh raha hoon');
   try {
     const b64 = dataUrl.split(',')[1]; const mime = dataUrl.slice(5, dataUrl.indexOf(';'));
@@ -672,7 +677,7 @@ $('#chatFile').addEventListener('change', async e => {
  "qty_mt": number (Quantity in TO/MT, 3 decimals),
  "confidence":"high|medium|low",
  "notes":"anything unclear"}`;
-    const txt = await gemini([{ text: prompt }, { inline_data: { mime_type: mime, data: b64 } }], true);
+    const txt = await aiAsk(prompt, { mime, b64 }, true);
     wait.remove();
     let j; try { j = JSON.parse(txt.replace(/```json|```/g, '').trim()); } catch (e) { throw new Error('AI ka jawab samajh nahi aaya: ' + txt.slice(0, 200)); }
     if (j.doc_type === 'scada') return chatPush('bot', 'Ye SCADA report lag rahi hai. Photo se truck-wise register sahi nahi banta — SCADA ki Excel file (DRUM_MIX_….xlsx) upload karo.');
@@ -698,6 +703,35 @@ function showGatepassConfirm(j) {
     if (addGatepass(g, 'ai')) { box.innerHTML = `✅ Saved: ${esc(g.invNo)} · ${f3(g.qty)} MT · ${dmy(g.recvDate)}`; chatPush('bot', `Gatepass ${esc(g.invNo)} (${f3(g.qty)} MT) save hua. Naya balance: <b>${f3(currentBalance() ?? 0)} MT</b>`); }
   };
   appendMsg('bot', '', box);
+}
+async function aiAsk(text, file, json) {
+  const cfg = aiCfg();
+  if ((cfg.provider || 'claude') === 'gemini') {
+    const parts = [{ text }]; if (file) parts.push({ inline_data: { mime_type: file.mime, data: file.b64 } });
+    return gemini(parts, json);
+  }
+  return claude(text, file, json);
+}
+async function claude(text, file, json) {
+  const cfg = aiCfg();
+  const content = [];
+  if (file) content.push(file.mime === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: file.b64 } }
+    : { type: 'image', source: { type: 'base64', media_type: file.mime, data: file.b64 } });
+  content.push({ type: 'text', text: json ? text + '\nRespond with the JSON object only, no other text.' : text });
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({ model: cfg.model || 'claude-sonnet-5-5', max_tokens: 1500, messages: [{ role: 'user', content }] })
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error?.message || ('HTTP ' + r.status));
+  let out = (d.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+  if (json) { const m = out.match(/\{[\s\S]*\}/); if (m) out = m[0]; }
+  return out;
 }
 async function gemini(parts, json) {
   const cfg = aiCfg();
