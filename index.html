@@ -23,6 +23,7 @@
   <button data-tab="chat">🤖 Chat</button>
   <button data-tab="plant">🏭 Plant Register</button>
   <button data-tab="bitumen">🛢️ Bitumen</button>
+  <button data-tab="progress">📊 Progress</button>
   <button data-tab="vehicles">🚚 Vehicles</button>
   <button data-tab="settings">⚙️ Settings</button>
 </nav>
@@ -146,6 +147,46 @@
     </div>
   </section>
 
+  <!-- PROGRESS (road work tracker: har work ka alag) -->
+  <section id="tab-progress" class="tab">
+    <div class="panel pg-head" id="pgHead"></div>
+    <div class="pg-tiles" id="pgTiles"></div>
+    <div class="panel" id="pgEst"></div>
+    <div class="panel">
+      <div class="pg-ph"><h3>Chainage-wise progress</h3><div class="pg-legend" id="pgLegend"></div></div>
+      <div class="tablewrap"><svg id="pgStrip" width="100%" role="img" aria-label="Chainage strip chart"></svg></div>
+      <p class="muted">Chart par kisi stretch ko dabao to edit hoga.</p>
+    </div>
+    <div class="panel">
+      <div class="pg-ph"><h3>Completed length by treatment (bar chart)</h3><span class="muted" id="pgBarHint"></span></div>
+      <div class="tablewrap"><svg id="pgBars" width="100%" role="img" aria-label="Bar chart"></svg></div>
+    </div>
+    <div class="pg-cols">
+      <div class="panel">
+        <h3 id="pgFormTitle">Stretch add karo</h3>
+        <div class="pg-pick" id="pgPick"></div>
+        <div class="grid4" style="grid-template-columns:1fr 1fr">
+          <label>From chainage<input id="pgFrom" placeholder="2+350" autocomplete="off"></label>
+          <label>To chainage<input id="pgTo" placeholder="3+100" autocomplete="off"></label>
+          <label>Side<select id="pgSide"><option value="Full">Full width</option><option value="LHS">LHS</option><option value="RHS">RHS</option></select></label>
+          <label>Date<input id="pgDate" type="date"></label>
+        </div>
+        <label>Remark<input id="pgNote" placeholder="Optional"></label>
+        <div class="row"><button class="btn primary" id="pgSave">+ Stretch add karo</button><button class="btn hidden" id="pgCancel">Cancel edit</button></div>
+        <p class="muted">Chainage: <b>2+350</b>, <b>2/350</b> ya <b>2.350</b></p>
+        <details class="dayblock"><summary>⚙️ Road details, layers aur estimate</summary><div id="pgSetup"></div></details>
+        <details class="dayblock"><summary>⬆️ Purane tracker ka backup (JSON) import</summary>
+          <p class="muted">Alag tracker file se "Export JSON" kiya tha to wo file yahan daalo. Us work ke stretches is work mein aa jayenge.</p>
+          <label class="btn">JSON chuno<input type="file" id="pgImport" accept=".json" hidden></label>
+        </details>
+      </div>
+      <div class="panel">
+        <div class="pg-ph"><h3>Stretch register</h3><div class="pg-filter" id="pgFilter"></div></div>
+        <div class="tablewrap" id="pgTable"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- SETTINGS -->
   <section id="tab-settings" class="tab">
     <div class="panel">
@@ -207,5 +248,6 @@
 <div id="toast" class="toast"></div>
 
 <script src="app.js"></script>
+<script src="progress.js"></script>
 </body>
 </html>

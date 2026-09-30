@@ -1124,6 +1124,7 @@ function renderAll() {
   if (active === 'tab-bitumen') renderBitumen();
   if (active === 'tab-vehicles') renderVehicles();
   if (active === 'tab-settings') renderSettings();
+  if (active === 'tab-progress' && typeof renderProgress === 'function') renderProgress();
 }
 load();
 renderWorkSelect();
