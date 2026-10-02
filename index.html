@@ -258,6 +258,18 @@
       <p class="muted">Naya work upar ke dropdown mein "➕ Naya work…" se banao. Har work ke vehicles, opening balance, gatepass aur register alag rehte hain.</p>
     </div>
     <div class="panel">
+      <h3>Site staff / charge handover (lock)</h3>
+      <p class="muted">Staff badle to naya naam "kab se" date ke saath jodo — pichhle ka charge apne aap ek din pehle tak ho jayega. <b>🔒 Lock</b> dabane par us date tak ka register freeze: edit / delete / dobara generate nahi hoga, aur print mein har staff ka hissa alag panne par uske naam ke saath aayega.</p>
+      <div class="grid4">
+        <label>Site<select id="stRole"><option value="plant">Plant site engineer (Plant register)</option><option value="paver">Paver site work assistant (Paver register)</option></select></label>
+        <label>Naam<input id="stName"></label>
+        <label>Hodda<input id="stDesig" placeholder="A.A.E. / Work Assistant"></label>
+        <label>Kab se<input id="stFrom" type="date"></label>
+        <div class="end"><button class="btn primary" id="btnAddStaff">+ Add</button></div>
+      </div>
+      <div class="tablewrap"><table class="grid" id="staffTable"></table></div>
+    </div>
+    <div class="panel">
       <h3>Tender items (mix type)</h3>
       <div class="grid4">
         <label>Item no.<input id="itCode" placeholder="10"></label>

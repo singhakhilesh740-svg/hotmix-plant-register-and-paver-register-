@@ -19,6 +19,8 @@ const DEF = () => ({
   pv2: {},                  // Paver Parishisht-2 per truck: {tb, tm, remark}
   pv2upto: '',              // Progress kis date tak poora hai (user ne confirm kiya)
   pv4: {},                  // Paver Parishisht-4 per truck: {l, c, r, remark}
+  staff: [],                // [{id, role:'plant'|'paver', name, desig, from, to, locked}]
+  pvLock: null,             // paver lock snapshot {upto, alloc, lens, pieces}
   chat: []
 });
 // STORE = { works: {id: workData}, current: id }  — har kaam ka alag data
@@ -98,6 +100,25 @@ function fmtDateAny(s) {
     const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   }
   return '';
+}
+
+// ---------------- site staff + lock ----------------
+const ROLE = { plant: 'Plant site engineer', paver: 'Paver site work assistant' };
+function staffFor(role, date) { return (DB.staff || []).find(x => x.role === role && (!x.from || x.from <= date) && (!x.to || date <= x.to)) || null; }
+function lockDate(role) { return (DB.staff || []).filter(x => x.role === role && x.locked && x.to).map(x => x.to).sort().pop() || ''; }
+const isLocked = (role, date) => { const l = lockDate(role); return !!l && date <= l; };
+function lockMsg(role, date) { toast(`🔒 ${dmy(date)} ${ROLE[role]} ke charge mein lock hai (${dmy(lockDate(role))} tak). Settings → Site staff se unlock karo.`); }
+// list ko staff ke hisaab se lagataar hisson mein baanto (print mein har staff ka alag panna)
+function staffGroups(list, role, dateOf) {
+  const out = [];
+  list.forEach(x => { const st = staffFor(role, dateOf(x)), id = st ? st.id : '-'; const g = out[out.length - 1];
+    if (g && g.id === id) g.items.push(x); else out.push({ id, staff: st, items: [x] }); });
+  return out;
+}
+function staffLine(role, st) {
+  if (!st) return '';
+  return `<div class="meta" style="font-weight:600"><span>${role === 'plant' ? 'પ્લાન્ટ સાઈટ ઈજનેર' : 'પેવર સાઈટ વર્ક આસિસ્ટન્ટ'}: ${esc(st.name)}${st.desig ? ' (' + esc(st.desig) + ')' : ''}</span>
+    <span>ચાર્જ: ${st.from ? dmy(st.from) : '—'} થી ${st.to ? dmy(st.to) : 'ચાલુ'}</span></div>`;
 }
 
 // ---------------- tabs ----------------
@@ -320,7 +341,7 @@ function numberFrom(trucks, from, gp) { for (let i = from; i < trucks.length; i+
 // is run ke baad wale saved runs ka numbering aage badhao
 function cascadeGP(run) {
   let gp = nextGP(run.trucks[run.trucks.length - 1]?.gp);
-  DB.runs.filter(r => r.id !== run.id && runKey(r) > runKey(run)).sort((a, b) => runKey(a).localeCompare(runKey(b)))
+  DB.runs.filter(r => r.id !== run.id && runKey(r) > runKey(run) && !isLocked('plant', r.date)).sort((a, b) => runKey(a).localeCompare(runKey(b)))
     .forEach(r => { gp = numberFrom(r.trucks, 0, gp); });
 }
 function lastVehicleUsed() {
@@ -406,6 +427,7 @@ $('#scadaFile').addEventListener('change', async e => {
 $('#btnGenerate').addEventListener('click', () => {
   if (!SC) return;
   const day = SC.days.find(d => d.date === $('#genDate').value);
+  if (isLocked('plant', day.date)) return lockMsg('plant', day.date);
   const parts = splitByItem(day, $('#genItem').value);
   if (parts.length > 1) { toast(`Is din ${parts.length} mix mile — sab ka register ban raha hai`); return generateDays([day]); }
   try {
@@ -444,6 +466,7 @@ function generateDays(days) {
   const done = [], busyByDate = {};
   try {
     parts.forEach(p => {
+      if (isLocked('plant', p.date)) { done.push({ date: p.date, mix: p.mix, n: '—', scada: p.totalT, reg: DB.runs.filter(r => sameRun(r, p, SC.file)).reduce((a, r) => a + regTotal(r), 0), gp: '🔒 lock (chhoda)' }); return; }
       const olds = DB.runs.filter(r => sameRun(r, p, SC.file));
       if (olds.length && !replace) { done.push({ date: p.date, mix: p.mix, n: '—', scada: p.totalT, reg: olds.reduce((a, r) => a + regTotal(r), 0), gp: 'pehle se saved (chhoda)' }); return; }
       DB.runs = DB.runs.filter(r => !olds.includes(r));
@@ -471,7 +494,7 @@ $('#btnRedetect').addEventListener('click', () => {
   const items = DB.items.filter(i => +i.pct > 0); if (!items.length) return toast('Settings mein item aur % daalo');
   const ch = [];
   DB.runs.forEach(r => {
-    if (!r.bitPctSet) return;
+    if (!r.bitPctSet || isLocked('plant', r.date)) return;
     const it = items.reduce((b, i) => Math.abs(i.pct - r.bitPctSet) < Math.abs(b.pct - r.bitPctSet) ? i : b);
     if (it.code != r.item) ch.push({ r, it });
   });
@@ -518,6 +541,7 @@ $('#genTable').addEventListener('change', e => {
 });
 $('#btnSaveRun').addEventListener('click', () => {
   if (!DRAFT) return;
+  if (isLocked('plant', DRAFT.date)) return lockMsg('plant', DRAFT.date);
   DB.runs = DB.runs.filter(r => r.id !== DRAFT.id);
   DB.runs.push(DRAFT);
   const later = DB.runs.filter(r => r.id !== DRAFT.id && runKey(r) > runKey(DRAFT)).length;
@@ -536,7 +560,7 @@ function runsInRange() {
 function renderSavedRuns() {
   const runs = runsInRange();
   if (!runs.length) { $('#savedRuns').innerHTML = '<p class="muted">Abhi koi register save nahi hai.</p>'; return; }
-  $('#savedRuns').innerHTML = runs.map(r => `<details class="dayblock"><summary>${dmy(r.date)} · ${esc(itemLabel(r.item) || r.mix)} · ${r.trucks.length} trucks · register ${f2(regTotal(r))} MT (SCADA ${f2(r.totalT)}) · bitumen ${f3(r.bitKg / 1000)} MT
+  $('#savedRuns').innerHTML = runs.map(r => `<details class="dayblock"><summary>${isLocked('plant', r.date) ? '🔒 ' : ''}${dmy(r.date)} · ${esc(itemLabel(r.item) || r.mix)} · ${r.trucks.length} trucks · register ${f2(regTotal(r))} MT (SCADA ${f2(r.totalT)}) · bitumen ${f3(r.bitKg / 1000)} MT
       <span class="pill">${r.src === 'tripper' ? 'SCADA tripper' : 'SCADA cumulative'}</span></summary>
       <div class="tablewrap"><table class="grid"><thead><tr><th>Truck</th><th>Samay</th><th>GP</th><th>Gross</th><th>Net</th><th>Tare</th><th>Agg</th><th>Tank</th><th>Mix</th><th>Remark</th></tr></thead><tbody>
       ${r.trucks.map(t => `<tr><td>${esc(t.veh)}</td><td>${t.time}</td><td>${t.gp}</td><td>${t.gross}</td><td>${t.net}</td><td>${t.tare}</td><td>${esc(t.aggT)}</td><td>${t.tankT}</td><td>${t.mixT}</td><td class="l">${esc(t.remark)}</td></tr>`).join('')}
@@ -545,6 +569,7 @@ function renderSavedRuns() {
 }
 $('#savedRuns').addEventListener('click', e => {
   const eid = e.target.dataset.edit;
+  { const rid = eid || e.target.dataset.del, rr = rid && DB.runs.find(r => r.id === rid); if (rr && isLocked('plant', rr.date)) return lockMsg('plant', rr.date); }
   if (eid) {
     DRAFT = JSON.parse(JSON.stringify(DB.runs.find(r => r.id === eid)));
     let c = 0; DRAFT.trucks.forEach(t => { c += +t.net; t.regCum = c / 1000; setFlags(t); });
@@ -557,12 +582,14 @@ $('#savedRuns').addEventListener('click', e => {
 });
 
 // ================= PRINT: Parishisht 5 / 3 =================
-function regHead(no, title) {
+function regHead(no, title, staff, role = 'plant') {
   const s = DB.settings;
   return `<h2>પરિશિષ્ટ - ${no}</h2><h4>${title}</h4>
-  <div class="meta"><span>કામનું નામ: ${esc(s.workName)}</span><span>એજન્સી: ${esc(s.agency)}</span><span>પ્લાન્ટ: ${esc(s.plant)}</span></div>`;
+  <div class="meta"><span>કામનું નામ: ${esc(s.workName)}</span><span>એજન્સી: ${esc(s.agency)}</span><span>પ્લાન્ટ: ${esc(s.plant)}</span></div>${staffLine(role, staff)}`;
 }
-function printP5(runs) {
+function printP5(runs) { return staffGroups(runs, 'plant', r => r.date).map(g => printP5One(g.items, g.staff)).join(''); }
+function printP3(runs) { return staffGroups(runs, 'plant', r => r.date).map(g => printP3One(g.items, g.staff)).join(''); }
+function printP5One(runs, staff) {
   let rowsHtml = '';
   runs.forEach(r => {
     r.trucks.forEach((t, i) => {
@@ -573,7 +600,7 @@ function printP5(runs) {
     });
     rowsHtml += `<tr><td colspan="13" style="height:8px"></td></tr>`;
   });
-  return `<div class="reg">${regHead('૫', 'હોટમીક્ષ પ્લાન્ટ સાઈટ ઉપર ડામર કામ માટેના મીશ્રણના વજન વગેરેની નોંધ')}
+  return `<div class="reg">${regHead('૫', 'હોટમીક્ષ પ્લાન્ટ સાઈટ ઉપર ડામર કામ માટેના મીશ્રણના વજન વગેરેની નોંધ', staff)}
   <table><thead>
   <tr><th rowspan="2">ક્રમાંક</th><th rowspan="2">તારીખ</th><th rowspan="2">ટેન્ડરની આઈટમ નંબર તથા તેનું વર્ણન ટૂંકમાં</th>
   <th colspan="6">ટ્રક અથવા ડામર મિશ્રણની હેરફેર</th><th rowspan="2">ખાલી ટ્રકનું વજન</th><th rowspan="2">વજન લેનાર અને નોંધનારની સહી</th><th rowspan="2">ઠેકેદારની સહી</th><th rowspan="2">રીમાર્ક</th></tr>
@@ -589,7 +616,7 @@ function corrNote(runs) {
   if (t.some(v => v)) parts.push(`ટાંકીનું ઉષ્ણતામાન = SCADA ${t.map(sg).join(' / ')}°C (સેન્સર કરેક્શન)`);
   return parts.length ? `<p style="font-size:10px;margin:4px 0">નોંધ: ${parts.join('; ')}</p>` : '';
 }
-function printP3(runs) {
+function printP3One(runs, staff) {
   let rowsHtml = '';
   runs.forEach(r => {
     r.trucks.forEach((t, i) => {
@@ -599,7 +626,7 @@ function printP3(runs) {
     });
     rowsHtml += `<tr><td colspan="10" style="height:8px"></td></tr>`;
   });
-  return `<div class="reg">${regHead('૩', 'હોટમીક્ષ પ્લાન્ટ સાઈટ ઉપર ડામર (એગ્રીગેટ) મીશ્રણના ઉષ્ણતામાનની નોંધ')}
+  return `<div class="reg">${regHead('૩', 'હોટમીક્ષ પ્લાન્ટ સાઈટ ઉપર ડામર (એગ્રીગેટ) મીશ્રણના ઉષ્ણતામાનની નોંધ', staff)}
   <table><thead>
   <tr><th rowspan="2">તારીખ</th><th rowspan="2">સમય</th><th rowspan="2">મિશ્રણનો પ્રકાર</th><th rowspan="2">ટ્રક નંબર</th>
   <th colspan="3">ઉષ્ણતામાનના માપ ફેરનહીટ / સેન્ટીગ્રેડ અંશ</th><th rowspan="2">મિશ્રણ જે સ્થળે પાથરવાનું છે તેના કિ.મી. ચેઈનેજ વગેરે</th><th rowspan="2">ઉષ્ણતામાનની નોંધ રાખનારની સહી</th><th rowspan="2">રીમાર્ક</th></tr>
@@ -762,18 +789,22 @@ $('#btnAddGP').addEventListener('click', () => {
   if (addGatepass(g, 'manual')) { toast('Gatepass add hua'); $$('#gpForm [name]').forEach(i => { if (i.name !== 'grade') i.value = ''; }); }
 });
 $('#gpTable').addEventListener('click', e => {
-  const id = e.target.dataset.delgp; if (!id || !confirm('Gatepass delete karein?')) return;
+  const id = e.target.dataset.delgp; if (!id) return;
+  { const g = DB.gatepasses.find(x => x.id === id); if (g && isLocked('plant', g.recvDate)) return lockMsg('plant', g.recvDate); }
+  if (!confirm('Gatepass delete karein?')) return;
   DB.gatepasses = DB.gatepasses.filter(g => g.id !== id); save(); renderAll();
 });
 $('#ledgerTable').addEventListener('change', e => {
+  { const dd = e.target.dataset.p1 || e.target.dataset.tack; if (dd && isLocked('plant', dd)) { lockMsg('plant', dd); return renderBitumen(); } }
   const pd = e.target.dataset.p1;
   if (pd) { DB.p1[pd] = DB.p1[pd] || {}; DB.p1[pd][e.target.dataset.k] = e.target.value.trim(); save(); return; }
   const d = e.target.dataset.tack; if (!d) return;
   if (e.target.value.trim() === '') delete DB.tack[d]; else DB.tack[d] = +e.target.value || 0;
   save(); renderBitumen();
 });
-function printP1() {
-  const L = buildLedger(); if (!L.length) return '';
+function printP1() { return staffGroups(buildLedger(), 'plant', d => d.date).map(g => printP1One(g.items, g.staff)).join(''); }
+function printP1One(L, staff) {
+  if (!L.length) return '';
   const kg = q => Math.round((+q || 0) * 1000).toLocaleString('en-IN');
   let rows = '';
   L.forEach(d => {
@@ -788,7 +819,7 @@ function printP1() {
       <td>${last && d.mixT ? esc(d.pctTxt) : ''}</td><td>${last ? esc(d.p1.reason || '') : ''}</td><td></td><td></td><td style="font-size:9px">${rem}</td></tr>`;
     }
   });
-  return `<div class="reg">${regHead('૧', 'ડામરની આવક તથા વપરાશની નોંધ')}
+  return `<div class="reg">${regHead('૧', 'ડામરની આવક તથા વપરાશની નોંધ', staff)}
   <table class="p1"><colgroup><col style="width:5%"><col style="width:5%"><col style="width:9.5%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:4.5%"><col style="width:5%"><col style="width:5%"><col style="width:5.5%"><col style="width:7%"><col style="width:5.5%"><col style="width:4.5%"><col style="width:6%"><col style="width:6%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:7.5%"></colgroup><thead>
   <tr><th rowspan="2">તારીખ</th><th rowspan="2">ખુલતી સિલક</th><th colspan="4">ડામરની આવક</th><th colspan="3">કામનો રોજીંદો વપરાશ</th>
   <th rowspan="2">દિવસના અંતે વપરાશ પછીનો વધેલ જથ્થો</th><th rowspan="2">કામ થયું હોય તેનું સ્થળ કી.મી. ચેઈનેજ</th><th rowspan="2">થયેલ કામનો જથ્થો ટન ચો.મી.</th>
@@ -859,6 +890,7 @@ function renderSettings() {
     (DB.items.map((it, k) => { const p = itemParams(it); return `<tr><td>${esc(it.code)}</td><td>${esc(it.name)}</td><td>${it.pct}</td><td>${p.th}</td><td>${p.den}</td><td>${f2(1 / (p.den * p.th / 1000))}</td><td>${p.tack ? p.tack : '<span class="muted">nahi</span>'}</td>
       <td>${itemEstQty(it) ? f2(itemEstQty(it)) + (it.estQty ? '' : ' <span class="muted">(Progress se)</span>') : '—'}</td>
       <td>${p.tack && itemEstQty(it) ? f3(itemEstQty(it) / (p.den * p.th / 1000) * p.tack / 1000) + ' MT' : '—'}</td><td><button class="btn sm" data-edit_it="${k}">✏️</button> <button class="btn sm danger" data-delit="${k}">🗑</button></td></tr>`; }).join('') || '<tr><td colspan="10" class="muted">Item add karo (jaise 10 – BM – 3.3%)</td></tr>') + '</tbody>';
+  renderStaff();
   const a = aiCfg(); $('#aiProvider').value = a.provider || 'claude'; $('#aiKey').value = a.key || ''; $('#aiModel').value = a.model || defModel(a.provider || 'claude');
 }
 $('#btnSaveSet').addEventListener('click', () => {
@@ -867,7 +899,10 @@ $('#btnSaveSet').addEventListener('click', () => {
   if ((firstGP() !== oldFirst || DB.settings.gpPerBook !== oldPer) && DB.runs.length &&
       confirm(`Gate pass shuru ${firstGP()} se. Saare saved register ke gate pass no. dobara lagayein?`)) {
     let gp = firstGP();
-    [...DB.runs].sort((a, b) => runKey(a).localeCompare(runKey(b))).forEach(r => { gp = numberFrom(r.trucks, 0, gp); });
+    [...DB.runs].sort((a, b) => runKey(a).localeCompare(runKey(b))).forEach(r => {
+      if (isLocked('plant', r.date)) { if (r.trucks.length) gp = nextGP(r.trucks[r.trucks.length - 1].gp); return; }   // lock wale din nahi badlenge
+      gp = numberFrom(r.trucks, 0, gp);
+    });
   }
   save(); toast('Settings save hui'); renderAll();
 });
@@ -883,6 +918,51 @@ $('#itemTable').addEventListener('click', e => {
   const ek = e.target.dataset.edit_it;
   if (ek != null) { const it = DB.items[+ek]; $('#itCode').value = it.code; $('#itName').value = it.name; $('#itPct').value = it.pct; { const p = itemParams(it); $('#itTh').value = p.th; $('#itDen').value = p.den; $('#itTack').value = it.tack || ''; $('#itEst').value = it.estQty || ''; } $('#itName').focus(); return toast('Badal kar "+ Add" dabao'); }
   const k = e.target.dataset.delit; if (k == null) return; DB.items.splice(+k, 1); save(); renderAll(); });
+function renderStaff() {
+  const L = [...(DB.staff || [])].sort((a, b) => (a.role + (a.from || '')).localeCompare(b.role + (b.from || '')));
+  $('#staffTable').innerHTML = `<thead><tr><th>Site</th><th>Naam</th><th>Hodda</th><th>Kab se</th><th>Kab tak</th><th>Lock</th><th></th></tr></thead><tbody>` +
+    (L.map(x => `<tr><td>${ROLE[x.role]}</td><td class="l"><b>${esc(x.name)}</b></td><td>${esc(x.desig || '')}</td><td>${x.from ? dmy(x.from) : '—'}</td>
+      <td><input type="date" data-sto="${x.id}" value="${x.to || ''}" ${x.locked ? 'disabled' : ''}></td>
+      <td>${x.locked ? `🔒 ${dmy(x.to)} tak <button class="btn sm" data-sunlock="${x.id}">Unlock</button>` : `<button class="btn sm primary" data-slock="${x.id}">🔒 Lock</button>`}</td>
+      <td><button class="btn sm danger" data-sdel="${x.id}">🗑</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">Abhi koi staff nahi</td></tr>') + '</tbody>';
+}
+$('#btnAddStaff').addEventListener('click', () => {
+  const role = $('#stRole').value, name = $('#stName').value.trim(), from = $('#stFrom').value;
+  if (!name || !from) return toast('Naam aur "kab se" date daalo');
+  // pichhle staff ki "kab tak" khali ho to naye ke ek din pehle tak
+  const prev = DB.staff.filter(x => x.role === role && !x.to && (x.from || '') < from).sort((a, b) => (a.from || '').localeCompare(b.from || '')).pop();
+  if (prev) prev.to = addDays(from, -1);
+  DB.staff.push({ id: uid(), role, name, desig: $('#stDesig').value.trim(), from, to: '', locked: false });
+  save(); $('#stName').value = $('#stDesig').value = ''; renderStaff();
+  toast(prev ? `${prev.name} ka charge ${dmy(prev.to)} tak set hua — chaho to Lock dabao` : 'Staff add hua');
+});
+$('#staffTable').addEventListener('change', e => { const id = e.target.dataset.sto; if (!id) return; DB.staff.find(x => x.id === id).to = e.target.value; save(); renderStaff(); });
+$('#staffTable').addEventListener('click', e => {
+  const d = e.target.dataset;
+  if (d.slock) {
+    const x = DB.staff.find(v => v.id === d.slock);
+    if (!x.to) return toast('Pehle "Kab tak" date daalo');
+    if (!confirm(`${x.name} (${ROLE[x.role]}) ka ${dmy(x.to)} tak ka register lock karein?\nIske baad us date tak ki entry edit / delete / dobara generate nahi hogi.`)) return;
+    if (x.role === 'paver') {
+      if (typeof pv2Build !== 'function') return toast('Paver module load nahi hua');
+      if (!DB.pv2upto || DB.pv2upto < x.to) { if (!confirm(`Paver register mein Progress ${DB.pv2upto ? dmy(DB.pv2upto) : '—'} tak hi confirm hai. Kya Progress ${dmy(x.to)} tak poora hai? OK = haan, lock karo`)) return; DB.pv2upto = x.to; }
+      x.locked = true;
+      // jo chainage abhi register mein dikh rahi hai wahi hamesha ke liye fix (sirf lock date tak ke trucks)
+      const b = pv2Build(DB.pv2upto > x.to ? DB.pv2upto : x.to), keep = k => (DB.runs.find(r => r.id === k.split(':')[0])?.date || '9') <= x.to;
+      const pickK = o => Object.fromEntries(Object.entries(o).filter(([k]) => keep(k)));
+      DB.pvLock = { upto: x.to, alloc: pickK(b.alloc), lens: pickK(b.lens), pieces: pickK(b.pieces) };
+    } else x.locked = true;
+    save(); renderStaff(); return toast('🔒 Lock ho gaya');
+  }
+  if (d.sunlock) {
+    const x = DB.staff.find(v => v.id === d.sunlock);
+    if (prompt(`${x.name} ka lock kholne ke liye UNLOCK likho:`) !== 'UNLOCK') return;
+    x.locked = false;
+    if (x.role === 'paver') { const l = lockDate('paver'); if (!l) DB.pvLock = null; else if (DB.pvLock) DB.pvLock.upto = l; }
+    save(); renderStaff(); return;
+  }
+  if (d.sdel) { const x = DB.staff.find(v => v.id === d.sdel); if (x.locked) return toast('Pehle unlock karo'); if (!confirm('Staff entry delete karein?')) return; DB.staff = DB.staff.filter(v => v.id !== d.sdel); save(); renderStaff(); }
+});
 function defModel(p) { return p === 'gemini' ? 'gemini-2.5-flash' : 'claude-sonnet-5-5'; }
 $('#aiProvider').addEventListener('change', e => { $('#aiModel').value = defModel(e.target.value); });
 $('#btnSaveAI').addEventListener('click', () => {

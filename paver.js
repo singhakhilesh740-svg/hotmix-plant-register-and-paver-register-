@@ -52,21 +52,24 @@ function renderPaver() {
       <td style="${r.close < -0.5 ? 'color:var(--bad);font-weight:700' : ''}">${pvKg(r.close)}${r.close < -0.5 ? '<div class="flag">⚠ issue se zyada vaparash</div>' : ''}</td>
       <td class="l" style="white-space:normal;min-width:220px"><span class="muted" style="font-size:11px">${esc(r.calc)}</span><br>${inp(r.date, 'remark', r.m.remark, 180, 'remark')}</td></tr>`).join('') + '</tbody>';
 }
+const pvRunDate = key => DB.runs.find(r => r.id === String(key).split(':')[0])?.date || '';
 $('#pvTable1').addEventListener('change', e => {
   const d = e.target.dataset.pv; if (!d) return;
+  if (isLocked('paver', d)) { lockMsg('paver', d); return renderPaver(); }
   DB.pv1[d] = DB.pv1[d] || {}; DB.pv1[d][e.target.dataset.k] = e.target.value.trim(); save(); renderPaver();
 });
 ['#pvFrom', '#pvTo'].forEach(k => $(k).addEventListener('change', renderPaver));
 
-function printPv1() {
-  const R = paverRows(); if (!R.length) return '';
+function printPv1() { return staffGroups(paverRows(), 'paver', r => r.date).map(g => printPv1One(g.items, g.staff)).join(''); }
+function printPv1One(R, staff) {
+  if (!R.length) return '';
   const s = DB.settings;
   const rows = R.map(r => `<tr><td>${dmy(r.date)}</td><td>${pvKg(r.open)}</td><td>${r.rcv ? pvKg(r.rcv) : ''}</td><td>${pvKg(r.total)}</td><td>${esc(r.m.khatu || '')}</td>
     <td>${r.cons ? pvKg(r.cons) : ''}</td><td>${esc(r.chain || '')}</td><td>${r.area ? pvKg(r.area) : ''}</td><td>${r.rate ? f2(r.rate) + ' કિ.ગ્રા./ચો.મી.' : ''}</td><td>${esc(r.m.kul || '')}</td>
     <td>${esc(r.spec.replace(/kg\/sq\.m/g, 'કિ.ગ્રા./ચો.મી.'))}</td><td></td><td style="font-size:9px">${esc(r.calc)}${r.m.remark ? '; ' + esc(r.m.remark) : ''}</td></tr>`).join('');
   const w = [6, 7, 5, 7, 11, 7, 11, 7, 7, 6, 9, 7, 10];
   return `<div class="reg"><h2>પરિશિષ્ટ - ૧</h2><h4>ટેકકોટ, સરફેઈસ ડ્રેસીંગ, લીક્વીડ, સીલકોટ માટે ડામરના છંટકાવની નોંધ (પેવર સાઈટ)</h4>
-  <div class="meta"><span>કામનું નામ: ${esc(s.workName)}</span><span>એજન્સી: ${esc(s.agency)}</span><span>પ્લાન્ટ: ${esc(s.plant)}</span></div>
+  <div class="meta"><span>કામનું નામ: ${esc(s.workName)}</span><span>એજન્સી: ${esc(s.agency)}</span><span>પ્લાન્ટ: ${esc(s.plant)}</span></div>${staffLine('paver', staff)}
   <table class="p1"><colgroup>${w.map(x => `<col style="width:${x}%">`).join('')}</colgroup><thead>
   <tr><th>તારીખ</th><th>ડામરની ઉઘડતી સિલક</th><th>ડામરની આવક</th><th>કુલ ડામરનો જથ્થો</th><th>ડામરના છંટકાવ માટે ખાતાની નોંધ<br>૧. ખાતું ....ચો. મીટર<br>૧. ડોલ ....કી.ગ્રામ</th>
   <th>ડામરનો વપરાશ કિ.ગ્રામ</th><th>ડામરનો વપરાશ થયો હોય તે સ્થળ કિ.મી. (ચેઈનેજ)</th><th>ડામર છંટકાવવાનો વિસ્તાર ચો.મીટર</th><th>ડામર છંટકાવવાનો વપરાશ દર</th>
@@ -92,7 +95,7 @@ function pv2Build(upto) {
   const P = DB.progress || { road: { cw: 5.5 }, layers: [], stretches: [] };
   const half = (+P.road?.cw || 5.5) / 2;
   const runs = DB.runs.filter(r => r.date <= upto).sort((a, b) => runKey(a).localeCompare(runKey(b)));
-  const alloc = {}, summary = [], lens = {};
+  const alloc = {}, summary = [], lens = {}, pieces = {};
   [...new Set(runs.map(r => r.item))].forEach(code => {
     const it = DB.items.find(i => i.code == code), name = String(it?.name || runs.find(r => r.item == code)?.mix || '').toUpperCase();
     const st = (P.stretches || []).filter(s => String(s.t).toUpperCase() === name && (!s.date || s.date <= upto));
@@ -103,22 +106,40 @@ function pv2Build(upto) {
     const p = it ? itemParams(it) : null;
     summary.push({ code, name, tons, laneLen, area: laneLen * half, perT: tons ? laneLen * half / tons : 0, theo: p ? 1 / (p.den * p.th / 1000) : 0, half });
     if (!laneLen || !tons) return;
-    let si = 0, pos = segs[0].a;
+    // 🔒 lock: us date tak ke trucks ki chainage fix; baaki trucks bachi hui lane par
+    const LK = DB.pvLock, isLk = (r, i) => LK && r.date <= LK.upto && LK.pieces && LK.pieces[r.id + ':' + i];
+    let free = segs, freeTons = tons;
+    if (LK) {
+      const used = { LHS: [], RHS: [] }; let lkTons = 0;
+      itemRuns.forEach(r => r.trucks.forEach((t, i) => { if (!isLk(r, i)) return; const k = r.id + ':' + i;
+        alloc[k] = LK.alloc[k] || ''; lens[k] = LK.lens[k]; pieces[k] = LK.pieces[k]; lkTons += +t.net / 1000;
+        LK.pieces[k].forEach(pc => used[pc.side].push([pc.a, pc.b])); }));
+      free = [];
+      segs.forEach(g => { let cur = g.a;
+        pgMerge(used[g.side]).forEach(([ua, ub]) => { if (ub <= cur || ua >= g.b) return; if (ua > cur + 0.01) free.push({ a: cur, b: Math.min(ua, g.b), side: g.side }); cur = Math.max(cur, ub); });
+        if (cur < g.b - 0.01) free.push({ a: cur, b: g.b, side: g.side }); });
+      freeTons = tons - lkTons;
+    }
+    const freeLen = free.reduce((x, g) => x + g.b - g.a, 0);
+    if (!freeLen || freeTons <= 0) return;
+    let si = 0, pos = free[0].a;
     itemRuns.forEach(r => r.trucks.forEach((t, i) => {
-      let need = (+t.net / 1000) * laneLen / tons; const pieces = [];
-      lens[r.id + ':' + i] = { len: need, perT: laneLen * half / tons };
-      while (need > 0.01 && si < segs.length) {
-        const g = segs[si], take = Math.min(need, g.b - pos);
-        pieces.push({ a: pos, b: pos + take, side: g.side });
+      if (isLk(r, i)) return;
+      let need = (+t.net / 1000) * freeLen / freeTons; const pcs = [];
+      lens[r.id + ':' + i] = { len: need, perT: freeLen * half / freeTons };
+      while (need > 0.01 && si < free.length) {
+        const g = free[si], take = Math.min(need, g.b - pos);
+        pcs.push({ a: pos, b: pos + take, side: g.side });
         pos += take; need -= take;
-        if (g.b - pos < 0.01) { si++; if (si < segs.length) pos = segs[si].a; }
+        if (g.b - pos < 0.01) { si++; if (si < free.length) pos = free[si].a; }
       }
+      pieces[r.id + ':' + i] = pcs;
       const bySide = {};
-      pieces.forEach(pc => { (bySide[pc.side] = bySide[pc.side] || []).push(`${pvFmtCh(pc.a)}–${pvFmtCh(pc.b)}`); });
+      pcs.forEach(pc => { (bySide[pc.side] = bySide[pc.side] || []).push(`${pvFmtCh(pc.a)}–${pvFmtCh(pc.b)}`); });
       alloc[r.id + ':' + i] = Object.entries(bySide).map(([sd, arr]) => `${arr.join(', ')} ${sd}`).join('; ');
     }));
   });
-  return { alloc, summary, half, lens };
+  return { alloc, summary, half, lens, pieces };
 }
 function pv2Rows() {
   const upto = DB.pv2upto; if (!upto) return { rows: [], summary: [] };
@@ -153,30 +174,32 @@ function renderPaver2() {
   const inp = (key, k, v, w = 60, type = 'number') => `<input data-pv2="${key}" data-k="${k}" type="${type}" value="${esc(v ?? '')}" style="width:${w}px">`;
   $('#pv2Table').innerHTML = `<thead><tr><th>1 Tarikh</th><th>2 Samay</th><th>3 Item / mishran</th><th>4 Truck</th><th>5 Garam daamar °C</th><th>6 Mishran °C</th><th>7 Chainage</th><th>9 Remark</th></tr></thead><tbody>` +
     (rows.map(r => { const low = (r.m.tm !== undefined && r.m.tm !== '' && +r.m.tm < minT);
-      return `<tr class="${low ? 'warn' : ''}"><td>${r.first ? dmy(r.date) : ''}</td><td>${r.time}</td><td>${r.first ? esc(r.item) : ''}</td><td>${esc(r.veh)}</td>
+      return `<tr class="${low ? 'warn' : ''}"><td>${r.first ? (isLocked('paver', r.date) ? '🔒 ' : '') + dmy(r.date) : ''}</td><td>${r.time}</td><td>${r.first ? esc(r.item) : ''}</td><td>${esc(r.veh)}</td>
       <td>${inp(r.key, 'tb', r.m.tb)}</td><td>${inp(r.key, 'tm', r.m.tm)}${low ? `<div class="flag">⚠ ${minT}°C se kam</div>` : ''}</td>
       <td class="l">${r.chain ? esc(r.chain) : '<span class="flag">Progress mein is item ka stretch nahi</span>'}</td><td>${inp(r.key, 'remark', r.m.remark, 120, 'text')}</td></tr>`; }).join('')
       || '<tr><td colspan="8" class="muted">Is range mein koi truck nahi</td></tr>') + '</tbody>';
 }
 $('#pv2Gate').addEventListener('click', e => {
   if (e.target.id === 'pv2GoPg') return showTab('progress');
-  if (e.target.id === 'pv2Ok') { const v = $('#pv2UptoIn').value; if (!v) return toast('Date chuno'); DB.pv2upto = v; save(); return renderPaver(); }
+  if (e.target.id === 'pv2Ok') { const v = $('#pv2UptoIn').value; if (!v) return toast('Date chuno'); if (lockDate('paver') && v < lockDate('paver')) return toast(`🔒 ${dmy(lockDate('paver'))} tak lock hai — isse pehle ki date nahi`); DB.pv2upto = v; save(); return renderPaver(); }
   if (e.target.id === 'pv2Reset') { DB.pv2upto = ''; save(); renderPaver(); }
 });
 $('#pv2Table').addEventListener('change', e => {
   const k = e.target.dataset.pv2; if (!k) return;
+  if (isLocked('paver', pvRunDate(k))) { lockMsg('paver', pvRunDate(k)); return renderPaver(); }
   DB.pv2[k] = DB.pv2[k] || {}; DB.pv2[k][e.target.dataset.k] = e.target.value.trim(); save(); renderPaver2();
 });
 $('#pv2Travel').addEventListener('change', e => { DB.settings.travelMin = +e.target.value || 0; save(); renderPaver(); });
 ['#pv2From', '#pv2To'].forEach(k => $(k).addEventListener('change', renderPaver2));
-function printPv2() {
-  const { rows } = pv2Rows(); if (!rows.length) return '';
+function printPv2() { return staffGroups(pv2Rows().rows, 'paver', r => r.date).map(g => printPv2One(g.items, g.staff)).join(''); }
+function printPv2One(rows, staff) {
+  if (!rows.length) return '';
   const s = DB.settings;
-  const body = rows.map(r => `<tr><td>${r.first ? dmy(r.date) : ''}</td><td>${r.time}</td><td>${r.first ? esc(r.item) : ''}</td><td>${esc(r.veh)}</td>
+  const body = rows.map((r, n) => `<tr><td>${r.first || !n ? dmy(r.date) : ''}</td><td>${r.time}</td><td>${r.first || !n ? esc(r.item) : ''}</td><td>${esc(r.veh)}</td>
     <td>${r.m.tb ? esc(r.m.tb) + '°C' : ''}</td><td>${r.m.tm ? esc(r.m.tm) + '°C' : ''}</td><td style="font-size:9.5px">${esc(r.chain)}</td><td></td><td>${esc(r.m.remark || '')}</td></tr>`).join('');
   const w = [8, 7, 12, 8, 8, 8, 27, 10, 12];
   return `<div class="reg"><h2>પરિશિષ્ટ - ૨</h2><h4>પેવર સાઈટ ઉપર ટેકકોટ માટેના ડામર તથા મિશ્રણ (મીક્સ) ના ઉષ્ણતામાનની નોંધ</h4>
-  <div class="meta"><span>કામનું નામ: ${esc(s.workName)}</span><span>એજન્સી: ${esc(s.agency)}</span><span>પ્લાન્ટ: ${esc(s.plant)}</span></div>
+  <div class="meta"><span>કામનું નામ: ${esc(s.workName)}</span><span>એજન્સી: ${esc(s.agency)}</span><span>પ્લાન્ટ: ${esc(s.plant)}</span></div>${staffLine('paver', staff)}
   <table class="p1"><colgroup>${w.map(x => `<col style="width:${x}%">`).join('')}</colgroup><thead>
   <tr><th rowspan="2">તારીખ</th><th rowspan="2">સમય</th><th rowspan="2">ટેન્ડર આઈટમ નંબર તથા મીશ્રણનો પ્રકાર</th><th rowspan="2">ટ્રક અથવા ડમ્પર નંબર</th>
   <th colspan="2">ઉષ્ણતામાનની નોંધ ફેરનહાઈટ/સેન્ટીગ્રેડ અંશ</th><th rowspan="2">મીશ્રણ જે સ્થળે પાથરવાનું છે તેના કિ.મી. ચેઈનેજ વગેરે</th><th rowspan="2">ઉષ્ણતામાન નોંધનારની સહી</th><th rowspan="2">રીમાર્કસ</th></tr>
@@ -228,7 +251,7 @@ function renderPaver4() {
     <th>9 Daabi dhaar (mm)</th><th>10 Beech (mm)</th><th>11 Jamni dhaar (mm)</th><th>12 Sarasari (mm)</th><th>13 Niyat (mm)</th><th>14 L × W</th><th>15 Chainage</th><th>18 Remark</th></tr></thead><tbody>` +
     (R.map(r => {
       const low = r.lcr.some(x => x != null && x < r.spec) || (r.avg != null && r.avg < r.spec);
-      return `<tr class="${low ? 'warn' : ''}"><td>${r.sr}</td><td>${r.first ? dmy(r.date) : ''}</td><td>${r.first ? esc(r.item) : ''}</td><td>${r.time}</td><td>${esc(r.veh)}</td><td>${esc(r.gp)}</td><td>${r.net}</td>
+      return `<tr class="${low ? 'warn' : ''}"><td>${r.sr}</td><td>${r.first ? (isLocked('paver', r.date) ? '🔒 ' : '') + dmy(r.date) : ''}</td><td>${r.first ? esc(r.item) : ''}</td><td>${r.time}</td><td>${esc(r.veh)}</td><td>${esc(r.gp)}</td><td>${r.net}</td>
       <td>${r.last ? f2(r.dayTot) : ''}</td><td>${inp(r.key, 'l', r.m.l)}</td><td>${inp(r.key, 'c', r.m.c)}</td><td>${inp(r.key, 'r', r.m.r)}</td>
       <td><b>${r.avg != null ? f2(r.avg) : ''}</b>${low ? '<div class="flag">⚠ niyat se kam</div>' : ''}${r.calcT ? `<div class="muted" style="font-size:10px" title="Sirf app mein milan ke liye, print mein nahi">ref ${f2(r.calcT)}</div>` : ''}</td>
       <td>${r.spec}</td><td>${r.len ? `${f2(r.len)} × ${f2(r.half)}` : ''}</td><td class="l" style="font-size:12px">${esc(r.chain)}</td>
@@ -237,11 +260,13 @@ function renderPaver4() {
 }
 $('#pv4Table').addEventListener('change', e => {
   const k = e.target.dataset.pv4; if (!k) return;
+  if (isLocked('paver', pvRunDate(k))) { lockMsg('paver', pvRunDate(k)); return renderPaver(); }
   DB.pv4[k] = DB.pv4[k] || {}; DB.pv4[k][e.target.dataset.k] = e.target.value.trim(); save(); renderPaver4();
 });
 ['#pv4From', '#pv4To'].forEach(k => $(k).addEventListener('change', renderPaver4));
-function printPv4() {
-  const R = pv4Rows(); if (!R.length) return '';
+function printPv4() { return staffGroups(pv4Rows(), 'paver', r => r.date).map(g => printPv4One(g.items, g.staff)).join(''); }
+function printPv4One(R, staff) {
+  if (!R.length) return '';
   const s = DB.settings, v = x => x == null ? '' : f2(x);
   const body = R.map(r => `<tr><td>${r.sr}</td><td>${r.first ? dmy(r.date) : ''}</td><td>${r.first ? esc(r.item) : ''}</td><td>${r.time}</td><td>${esc(r.veh)}</td><td>${esc(r.gp)}</td>
     <td>${r.net}</td><td>${r.last ? f2(r.dayTot) + ' ટન' : ''}</td><td>${v(r.lcr[0])}</td><td>${v(r.lcr[1])}</td><td>${v(r.lcr[2])}</td>
@@ -249,7 +274,7 @@ function printPv4() {
     <td style="font-size:9px">${esc(r.chain)}</td><td></td><td></td><td>${esc(r.m.remark || '')}</td></tr>`).join('');
   const w = [3, 5.5, 6, 4.5, 4.5, 5, 5, 5.5, 5, 5, 5, 5, 5, 7.5, 12, 5.5, 5.5, 6];
   return `<div class="reg"><h2>પરિશિષ્ટ - ૪</h2><h4>પેવર સાઈટ ઉપર કામ ઉપરના ડામર, કપચી, મીશ્રણ મીક્સના વપરાશની નોંધ</h4>
-  <div class="meta"><span>કામનું નામ: ${esc(s.workName)}</span><span>એજન્સી: ${esc(s.agency)}</span><span>પ્લાન્ટ: ${esc(s.plant)}</span></div>
+  <div class="meta"><span>કામનું નામ: ${esc(s.workName)}</span><span>એજન્સી: ${esc(s.agency)}</span><span>પ્લાન્ટ: ${esc(s.plant)}</span></div>${staffLine('paver', staff)}
   <table class="p1"><colgroup>${w.map(x => `<col style="width:${x}%">`).join('')}</colgroup><thead>
   <tr><th rowspan="2">ક્રમાંક</th><th rowspan="2">તારીખ</th><th rowspan="2">ટેન્ડર આઈટમ નંબર તથા આઈટમનું વર્ણન ટૂંકમાં</th><th colspan="3">ટ્રક અથવા ડામરની વિગત</th>
   <th rowspan="2">મીશ્રણનું નેટ વજન</th><th rowspan="2">દિવસને અંતે પાથરેલ મિશ્રણનો જથ્થો</th><th colspan="4">મીશ્રણ પાથર્યા અને રોલીંગ થયા પછી જાડાઈ</th>
