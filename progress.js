@@ -82,6 +82,16 @@ function pgSpan() {
 }
 function pgNice(len) { const raw = len / 8, p = Math.pow(10, Math.floor(Math.log10(raw))); for (const k of [1, 2, 2.5, 5, 10]) if (k * p >= raw) return k * p; return 10 * p; }
 
+// ---- Paver staff ke hisaab se rang (jab ek se zyada paver staff ho)
+const PG_STAFF_COL = ['#2166ac', '#e08214', '#1b9e77', '#c51b7d', '#6a51a3', '#8c510a'];
+function pgStaffList() { return (DB.staff || []).filter(x => x.role === 'paver').sort((a, b) => (a.from || '').localeCompare(b.from || '')); }
+function pgStaffMode() { return pgStaffList().length > 1; }
+function pgStaffOf(date) { if (!date) return null; const L = pgStaffList(), i = L.findIndex(x => (!x.from || x.from <= date) && (!x.to || date <= x.to)); return i < 0 ? null : { ...L[i], col: PG_STAFF_COL[i % PG_STAFF_COL.length] }; }
+function pgNetDoneOf(t, rows) {   // diye gaye stretches ki full-width barabar lambai (NH/ROB ghata ke)
+  const P = pgData(), ded = pgMerge((P.road.ded || []).map(d => [d.from, d.to]));
+  const side = s => pgMerge(rows.filter(r => r.t === t && (r.side === 'Full' || r.side === s)).map(r => [r.from, r.to]));
+  return (pgMinus(side('LHS'), ded) + pgMinus(side('RHS'), ded)) / 2;
+}
 let pgEditing = null, pgCurT = null, pgFilterT = 'ALL';
 
 function renderProgress() {
@@ -122,13 +132,17 @@ function renderProgress() {
         <td>${pgLen(l.est.len)}</td><td>${l.est.mt ? pgMT(l.est.mt) : '—'}</td><td>${l.est.rate ? pgRs(l.est.rate) + '/MT' : '—'}</td><td>${l.est.amt || (l.est.mt && l.est.rate) ? pgRs(l.est.amt || l.est.mt * l.est.rate) : '—'}</td></tr>`).join('')}
       </tbody></table></div>`;
   }
-  $('#pgLegend').innerHTML = L.map(l => `<span style="--c:${l.color}">${esc(l.t)}</span>`).join('') + '<span class="pg-lg-est">Estimate chainage</span><span class="pg-lg-ded">Estimate mein nahi</span>';
+  const sm = pgStaffMode();
+  $('#pgLegend').innerHTML = (sm
+    ? pgStaffList().map((x, i) => `<span style="--c:${PG_STAFF_COL[i % PG_STAFF_COL.length]}" title="${x.from ? dmy(x.from) : ''} – ${x.to ? dmy(x.to) : 'chalu'}"><b>${esc(x.name)}</b> (${x.from ? dmy(x.from) : '—'} – ${x.to ? dmy(x.to) : 'chalu'})</span>`).join('') + '<span style="--c:#9aa0a6">Date / staff nahi</span>'
+    : L.map(l => `<span style="--c:${l.color}">${esc(l.t)}</span>`).join(''))
+    + '<span class="pg-lg-est">Estimate chainage</span><span class="pg-lg-ded">Estimate mein nahi</span>';
   pgDrawStrip(s, e); pgDrawBars(total); pgDrawForm(); pgDrawTable(); pgDrawSetup();
 }
 
 function pgDrawStrip(s, e) {
   const P = pgData(), L = P.layers, svg = $('#pgStrip'), W = 1000, X0 = 70, R = 20, laneH = 34, gap = 14;
-  const pts = (P.road.points || []).filter(p => p.at >= s && p.at <= e);
+  const pts = (P.road.points || []).filter(p => p.at >= s && p.at <= e), sm = pgStaffMode();
   const top = pts.length ? 56 : 30, lanesEnd = top + L.length * (laneH + gap) - gap, H = lanesEnd + 92;
   const x = m => X0 + (m - s) / (e - s) * (W - X0 - R);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -142,7 +156,7 @@ function pgDrawStrip(s, e) {
     pgRows(l.t).forEach(r => {
       const a0 = Math.min(r.from, r.to), b0 = Math.max(r.from, r.to), a = x(Math.max(a0, s)), b = x(Math.min(b0, e)); if (b <= a) return;
       const yy = r.side === 'RHS' ? y + laneH / 2 : y, hh = r.side === 'Full' ? laneH : laneH / 2;
-      o += `<rect class="pg-seg" data-id="${esc(r.id)}" x="${a}" y="${yy}" width="${Math.max(b - a, 1.5)}" height="${hh}" fill="${l.color}"><title>${esc(l.t)} ${r.side}: ${pgCh(a0)} to ${pgCh(b0)} (${pgLen(b0 - a0)})${r.date ? ' · ' + dmy(r.date) : ''}</title></rect>`;
+      o += `<rect class="pg-seg" data-id="${esc(r.id)}" x="${a}" y="${yy}" width="${Math.max(b - a, 1.5)}" height="${hh}" fill="${sm ? (pgStaffOf(r.date)?.col || '#9aa0a6') : l.color}" stroke="#fff" stroke-width="${sm ? .6 : 0}"><title>${esc(l.t)} ${r.side}: ${pgCh(a0)} to ${pgCh(b0)} (${pgLen(b0 - a0)})${r.date ? ' · ' + dmy(r.date) : ''}${sm ? ' · ' + (pgStaffOf(r.date)?.name || 'staff nahi') : ''}</title></rect>`;
     });
   });
   // ---- critical points: jahan kuch shuru / khatam hota hai
@@ -190,9 +204,19 @@ function pgDrawBars(total) {
   svg.setAttribute('viewBox', `0 0 ${W} ${H + 14}`);
   L.forEach((l, i) => {
     const base = l.est ? l.est.len : total, y = top + i * (barH + gap), d = pgNetDone(l.t), p = Math.min(100, d / base * 100);
-    o += `<text class="lbl" x="0" y="${y + barH / 2 + 5}">${esc(l.t)}</text><rect x="${X0}" y="${y}" width="${bw}" height="${barH}" fill="#ebe9e4" rx="3"/>
-      <rect x="${X0}" y="${y}" width="${bw * p / 100}" height="${barH}" fill="${l.color}" rx="3"/>
-      <text class="pct" x="${X0 + bw + 10}" y="${y + barH / 2 + 4}">${p.toFixed(1)}% · ${pgLen(d)} / ${pgLen(base)}</text>`;
+    o += `<text class="lbl" x="0" y="${y + barH / 2 + 5}">${esc(l.t)}</text><rect x="${X0}" y="${y}" width="${bw}" height="${barH}" fill="#ebe9e4" rx="3"/>`;
+    if (pgStaffMode() && d > 0) {
+      // har staff ka hissa alag rang mein (kul lambai wahi rahe, isliye anupaat mein)
+      const groups = [...pgStaffList().map((x, k) => ({ name: x.name, col: PG_STAFF_COL[k % PG_STAFF_COL.length], rows: P.stretches.filter(r => r.t === l.t && pgStaffOf(r.date)?.id === x.id) })),
+        { name: 'Date / staff nahi', col: '#9aa0a6', rows: P.stretches.filter(r => r.t === l.t && !pgStaffOf(r.date)) }]
+        .map(g => ({ ...g, len: pgNetDoneOf(l.t, g.rows) })).filter(g => g.len > 0);
+      const sum = groups.reduce((a, g) => a + g.len, 0) || 1; let xx = X0;
+      groups.forEach(g => { const w = bw * p / 100 * g.len / sum, share = d * g.len / sum;
+        o += `<rect x="${xx}" y="${y}" width="${w}" height="${barH}" fill="${g.col}" stroke="#fff" stroke-width="1"><title>${esc(g.name)}: ${pgLen(share)} (${(share / base * 100).toFixed(1)}%)</title></rect>`;
+        if (w > 46) o += `<text x="${xx + w / 2}" y="${y + barH / 2 + 4}" text-anchor="middle" style="fill:#fff;font-size:10.5px;font-weight:600">${pgLen(share)}</text>`;
+        xx += w; });
+    } else o += `<rect x="${X0}" y="${y}" width="${bw * p / 100}" height="${barH}" fill="${l.color}" rx="3"/>`;
+    o += `<text class="pct" x="${X0 + bw + 10}" y="${y + barH / 2 + 4}">${p.toFixed(1)}% · ${pgLen(d)} / ${pgLen(base)}</text>`;
   });
   svg.innerHTML = o;
   $('#pgBarHint').textContent = L.some(l => l.est) ? 'Har treatment ki estimate length ke saamne' : (P.road.end != null ? 'Poori road length ke saamne' : 'Road length set nahi — sabse door wali entry tak');
@@ -210,7 +234,7 @@ function pgDrawTable() {
   if (!list.length) { $('#pgTable').innerHTML = `<p class="muted">${P.stretches.length ? 'Is treatment ka koi stretch nahi.' : 'Abhi koi stretch nahi.'}</p>`; return; }
   $('#pgTable').innerHTML = `<table class="grid"><thead><tr><th>Treatment</th><th>From</th><th>To</th><th>Length</th><th>Side</th><th>Date</th><th>Remark</th><th></th></tr></thead><tbody>${
     list.map(r => { const a = Math.min(r.from, r.to), b = Math.max(r.from, r.to);
-      return `<tr><td class="l"><span class="pg-tag" style="--c:${col(r.t)}">${esc(r.t)}</span></td><td>${pgCh(a)}</td><td>${pgCh(b)}</td><td>${pgLen(b - a)}</td><td>${esc(r.side)}</td><td>${r.date ? dmy(r.date) : '—'}</td><td class="l">${esc(r.note || '')}</td>
+      return `<tr><td class="l"><span class="pg-tag" style="--c:${col(r.t)}">${esc(r.t)}</span></td><td>${pgCh(a)}</td><td>${pgCh(b)}</td><td>${pgLen(b - a)}</td><td>${esc(r.side)}</td><td>${r.date ? dmy(r.date) : '—'}${pgStaffMode() ? `<div style="font-size:11px;color:${pgStaffOf(r.date)?.col || '#9aa0a6'};font-weight:600">${esc(pgStaffOf(r.date)?.name || 'staff nahi')}</div>` : ''}</td><td class="l">${esc(r.note || '')}</td>
         <td><button class="btn sm" data-pe="${esc(r.id)}">✏️</button> <button class="btn sm danger" data-pd="${esc(r.id)}">🗑</button></td></tr>`; }).join('')}</tbody></table>`;
 }
 function pgStartEdit(id) {
