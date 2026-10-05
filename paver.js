@@ -83,7 +83,7 @@ $('#pvXls1').addEventListener('click', () => {
   const a = [...xlsTop('૧', 'ટેકકોટ, સરફેઈસ ડ્રેસીંગ, લીક્વીડ, સીલકોટ માટે ડામરના છંટકાવની નોંધ (પેવર સાઈટ)', 13),
     ['તારીખ', 'ડામરની ઉઘડતી સિલક (કિ.ગ્રા.)', 'ડામરની આવક (કિ.ગ્રા.)', 'કુલ ડામરનો જથ્થો (કિ.ગ્રા.)', 'ડામરના છંટકાવ માટે ખાતાની નોંધ', 'ડામરનો વપરાશ કિ.ગ્રામ', 'ડામરનો વપરાશ થયો હોય તે સ્થળ કિ.મી. (ચેઈનેજ)', 'ડામર છંટકાવવાનો વિસ્તાર ચો.મીટર', 'ડામર છંટકાવવાનો વપરાશ દર (કિ.ગ્રા./ચો.મી.)', 'કુલ ખાતા', 'નિયત ધોરણે અથવા નિર્દિષ્ટ વિગતો મુજબ ડામર છંટકાવનો વપરાશ દર', 'જથ્થો અને માપ નોંધનારની સહી', 'રીમાર્કસ']];
   R.forEach(r => a.push([dmy(r.date), Math.round(r.open), r.rcv ? Math.round(r.rcv) : '', Math.round(r.total), r.m.khatu || '', Math.round(r.cons), r.chain || '', Math.round(r.area), +f2(r.rate), r.m.kul || '', r.spec, '', r.calc + (r.m.remark ? '; ' + r.m.remark : '')]));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'પેવર પરિશિષ્ટ-૧');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, xlsSheet(a), 'પેવર પરિશિષ્ટ-૧');
   XLSX.writeFile(wb, 'Paver_Parishisht1.xlsx');
 });
 
@@ -213,7 +213,7 @@ $('#pv2Xls').addEventListener('click', () => {
   const a = [...xlsTop('૨', 'પેવર સાઈટ ઉપર ટેકકોટ માટેના ડામર તથા મિશ્રણ (મીક્સ) ના ઉષ્ણતામાનની નોંધ', 9),
     ['તારીખ', 'સમય', 'ટેન્ડર આઈટમ નંબર તથા મીશ્રણનો પ્રકાર', 'ટ્રક અથવા ડમ્પર નંબર', 'ગરમ ડામરનું ઉ. (°C)', 'મીશ્રણનું ઉ. (°C)', 'મીશ્રણ જે સ્થળે પાથરવાનું છે તેના કિ.મી. ચેઈનેજ વગેરે', 'ઉષ્ણતામાન નોંધનારની સહી', 'રીમાર્કસ']];
   rows.forEach(r => a.push([dmy(r.date), r.time, r.item, r.veh, r.m.tb || '', r.m.tm || '', r.chain, '', r.m.remark || '']));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'પેવર પરિશિષ્ટ-૨');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, xlsSheet(a, [[4, 5, 'ઉષ્ણતામાનની નોંધ ફેરનહાઈટ/સેન્ટીગ્રેડ અંશ']]), 'પેવર પરિશિષ્ટ-૨');
   XLSX.writeFile(wb, 'Paver_Parishisht2.xlsx');
 });
 const _renderPaver1 = renderPaver;
@@ -292,7 +292,7 @@ $('#pv4Xls').addEventListener('click', () => {
   const a = [...xlsTop('૪', 'પેવર સાઈટ ઉપર કામ ઉપરના ડામર, કપચી, મીશ્રણ મીક્સના વપરાશની નોંધ', 18),
     ['ક્રમાંક', 'તારીખ', 'ટેન્ડર આઈટમ નંબર તથા આઈટમનું વર્ણન ટૂંકમાં', 'સમય', 'ટ્રક નંબર', 'ગેઈટ પાસ', 'મીશ્રણનું નેટ વજન (કિ.ગ્રા.)', 'દિવસને અંતે પાથરેલ મિશ્રણનો જથ્થો (ટન)', 'ડાબી બાજુ ધાર પાસે (મી.મી.)', 'મધ્ય ભાગમાં (મી.મી.)', 'જમણી બાજુ ધાર પાસે (મી.મી.)', 'સરેરાશ જાડાઈ (મી.મી.)', 'નિયત ધોરણ પ્રમાણેની જાડાઈ (મી.મી.)', 'કેટલા ક્ષેત્રફળમાં પથરામણ થયું લંબાઈ X પહોળાઈ', 'મીશ્રણ જે સ્થળે પાથરવામાં આવે છે તેના કી.મી. ચેઈનેજ વગેરે', 'પેવર સાઈટ ઉપર દેખરેખ રાખનારની સહી', 'ઠેકેદારની સહી', 'રીમાર્કસ']];
   R.forEach(r => a.push([r.sr, dmy(r.date), r.item, r.time, r.veh, r.gp, r.net, r.last ? +f2(r.dayTot) : '', r.lcr[0] ?? '', r.lcr[1] ?? '', r.lcr[2] ?? '', r.avg != null ? +f2(r.avg) : '', r.spec, r.len ? `${f2(r.len)} x ${f2(r.half)}` : '', r.chain, '', '', r.m.remark || '']));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'પેવર પરિશિષ્ટ-૪');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, xlsSheet(a, [[3, 5, 'ટ્રક અથવા ડામરની વિગત'], [8, 11, 'મીશ્રણ પાથર્યા અને રોલીંગ થયા પછી જાડાઈ']]), 'પેવર પરિશિષ્ટ-૪');
   XLSX.writeFile(wb, 'Paver_Parishisht4.xlsx');
 });
 const _renderPaver12 = renderPaver;

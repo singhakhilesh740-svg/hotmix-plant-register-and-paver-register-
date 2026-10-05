@@ -628,6 +628,31 @@ function xlsTop(no, title, cols) {
   const s = DB.settings;
   return [[`પરિશિષ્ટ - ${no}`], [title], [`કામનું નામ: ${s.workName || ''}`, ...Array(Math.max(0, Math.floor(cols / 3) - 1)).fill(''), `એજન્સી: ${s.agency || ''}`, ...Array(Math.max(0, Math.floor(cols / 3) - 1)).fill(''), `પ્લાન્ટ: ${s.plant || ''}`], []];
 }
+// Register jaisi Excel sheet: upar title (merge), group heading, column heading, column no., chaudi columns
+// a = xlsTop(4 line) + heading line + data;  groups = [[pehla col, aakhri col, 'group ka naam'], ...]
+function xlsSheet(a, groups) {
+  const H = 4, head = a[H], n = head.length, data = a.slice(H + 1);
+  const rows = a.slice(0, H), merges = [{ s: { r: 0, c: 0 }, e: { r: 0, c: n - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: n - 1 } }];
+  let top = H;
+  if (groups && groups.length) {
+    const g = Array(n).fill(''), h2 = Array(n).fill('');
+    for (let c = 0; c < n; c++) {
+      const grp = groups.find(x => c >= x[0] && c <= x[1]);
+      if (grp) { if (c === grp[0]) { g[c] = grp[2]; merges.push({ s: { r: H, c: grp[0] }, e: { r: H, c: grp[1] } }); } h2[c] = head[c]; }
+      else { g[c] = head[c]; merges.push({ s: { r: H, c }, e: { r: H + 1, c } }); }   // bina group wala: do line mein ek hi heading
+    }
+    rows.push(g, h2); top = H + 1;
+  } else rows.push(head);
+  rows.push(head.map((_, i) => i + 1));            // column no. 1, 2, 3 …
+  const ws = XLSX.utils.aoa_to_sheet([...rows, ...data]);
+  ws['!merges'] = merges;
+  ws['!cols'] = head.map((h, c) => {
+    const longest = Math.max(...data.map(r => String(r[c] ?? '').length), 0);
+    return { wch: Math.min(42, Math.max(12, longest + 2, Math.min(26, String(h).length + 2))) };
+  });
+  ws['!rows'] = []; ws['!rows'][top] = { hpt: 48 };
+  return ws;
+}
 function printP5(runs) { return staffGroups(runs, 'plant', r => r.date).map(g => printP5One(g.items, g.staff)).join(''); }
 function printP3(runs) { return staffGroups(runs, 'plant', r => r.date).map(g => printP3One(g.items, g.staff)).join(''); }
 function printP5One(runs, staff) {
@@ -693,8 +718,8 @@ $('#btnXlsPlant').addEventListener('click', () => {
     p3.push([dmy(r.date), t.time, r.mix, t.veh, t.aggT, t.tankT, t.mixT, t.chain, t.remark]);
   }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(p5), 'પરિશિષ્ટ-૫');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(p3), 'પરિશિષ્ટ-૩');
+  XLSX.utils.book_append_sheet(wb, xlsSheet(p5, [[3, 8, 'ટ્રક અથવા ડામર મિશ્રણની હેરફેર']]), 'પરિશિષ્ટ-૫');
+  XLSX.utils.book_append_sheet(wb, xlsSheet(p3, [[4, 6, 'ઉષ્ણતામાનના માપ ફેરનહીટ / સેન્ટીગ્રેડ અંશ']]), 'પરિશિષ્ટ-૩');
   XLSX.writeFile(wb, `Plant_Register_${runs[0].date}_to_${runs[runs.length - 1].date}.xlsx`);
 });
 
@@ -878,7 +903,7 @@ $('#btnXlsP1').addEventListener('click', () => {
   const a = [...xlsTop('૧', 'ડામરની આવક તથા વપરાશની નોંધ', 18),
     ['તારીખ', 'ખુલતી સિલક', 'ઇન્ડેન્ટ / ઇન્વોઇસ નંબર', 'ગેઈટ પાસ નંબર', 'જથ્થો', 'કુલ જથ્થો', 'છાંટવા માટે', 'મિશ્રણ માટે', 'કુલ', 'દિવસના અંતે વપરાશ પછીનો વધેલ જથ્થો', 'કામ થયું હોય તેનું સ્થળ કી.મી. ચેઈનેજ', 'થયેલ કામનો જથ્થો ટન', 'ડામરનો બગાડ કંઈ થયો હોય તો', 'કામની નિર્દિષ્ટ વિગતો મુજબ ડામરના વપરાશનું ધોરણ', 'તફાવતનાં કારણો', 'દેખરેખ રાખનારની સહી', 'ઠેકેદારની સહી', 'રીમાર્ક']];
   L.forEach(d => a.push([dmy(d.date), +f3(d.open), d.gps.map(g => g.invNo).join(', '), d.gps.map(g => g.gpNo || g.tanker).join(', '), d.rcv ? +f3(d.rcv) : '', +f3(d.total), d.tack ? +f3(d.tack) : '', d.mixMT ? +f3(d.mixMT) : '', +f3(d.cons), +f3(d.close), d.p1.chain || '', d.mixT ? +f2(d.mixT) : '', d.p1.waste || '', d.mixT ? d.pctTxt : '', d.p1.reason || '', '', '', d.p1.remark || '']));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'પરિશિષ્ટ-૧');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, xlsSheet(a, [[2, 5, 'ડામરની આવક'], [6, 8, 'કામનો રોજીંદો વપરાશ']]), 'પરિશિષ્ટ-૧');
   XLSX.writeFile(wb, 'Bitumen_Register_P1.xlsx');
 });
 
