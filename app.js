@@ -189,8 +189,11 @@ function parseScadaWorkbook(wb) {
     despike('net', 20); despike('bitKg', 1000);
     // Din ki shuruat mein counter pichhle din ka total dikha sakta hai (carry-over) -> use baseline maano, jodo nahi
     // carry-over tabhi maano jab din mein aage counter reset hua ho (warna shuru ki reading is din ka hi maal hai)
-    const hasReset = rs.some((r, k) => k && rs[k - 1].net > 5 && r.net < rs[k - 1].net * 0.2);
-    const carry = hasReset && rs[0].net > 2;
+    // ... aur reset se pehle counter lagbhag ruka ho (jaise 313.1 -> 313.8 -> 0). Agar reset se pehle maal banta raha
+    // (jaise 3.0 -> 550.4 -> 0, mix badalne par reset) to shuru ki reading asli maal hai, ghatao nahi.
+    const rk = rs.findIndex((r, k) => k && rs[k - 1].net > 5 && r.net < rs[k - 1].net * 0.2);
+    const hasReset = rk > 0;
+    const carry = hasReset && rs[0].net > 2 && (rs[rk - 1].net - rs[0].net) < Math.max(2, 0.05 * rs[0].net);
     let baseN = carry ? rs[0].net : 0, baseB = carry ? rs[0].bitKg : 0;
     let offN = 0, offB = 0, pN = rs[0].net, pB = rs[0].bitKg, mxN = 0, mxB = 0;
     rs.forEach(r => {
