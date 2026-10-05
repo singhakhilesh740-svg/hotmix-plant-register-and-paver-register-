@@ -173,6 +173,20 @@ function parseScadaWorkbook(wb) {
   rows.forEach(r => (byDate[r.date] = byDate[r.date] || []).push(r));
   const days = Object.keys(byDate).sort().map(date => {
     const rs = byDate[date];
+    // SCADA ki akeli galat reading (jaise 544.8 -> 8545.3 -> 545.8) hatao: jo reading aage-peeche dono se bahut alag ho
+    // aur uske baad counter wapas purani line par aa jaye. Asli reset mein counter wapas nahi aata.
+    const fixes = [];
+    const despike = (key, thr) => {
+      for (let k = 1; k < rs.length; k++) {
+        const prev = rs[k - 1][key];
+        if (Math.abs(rs[k][key] - prev) <= thr) continue;
+        let back = -1;
+        for (let j = k + 1; j <= Math.min(k + 5, rs.length - 1); j++) if (Math.abs(rs[j][key] - prev) <= thr) { back = j; break; }
+        if (back < 0) { if (k === rs.length - 1 && rs[k][key] - prev > thr * 3) back = rs.length; else continue; }   // aakhri reading hi galat
+        for (let j = k; j < back; j++) { fixes.push(`${hm(rs[j].time)} ${key === 'net' ? 'Net Mix' : 'Bitumen Kg'} ${rs[j][key]} → ${prev}`); rs[j][key] = prev; }
+      }
+    };
+    despike('net', 20); despike('bitKg', 1000);
     // Din ki shuruat mein counter pichhle din ka total dikha sakta hai (carry-over) -> use baseline maano, jodo nahi
     // carry-over tabhi maano jab din mein aage counter reset hua ho (warna shuru ki reading is din ka hi maal hai)
     const hasReset = rs.some((r, k) => k && rs[k - 1].net > 5 && r.net < rs[k - 1].net * 0.2);
@@ -193,7 +207,7 @@ function parseScadaWorkbook(wb) {
       date, rows: rs, totalT: last.cum, bitKg: last.cumBit,
       start: rs[0].time, end: last.time,
       bitPctSet: bp.length ? median(bp) : 0,
-      hasTripper: rs.some(r => r.trip !== '')
+      hasTripper: rs.some(r => r.trip !== ''), fixes
     };
   });
   return { meta, days };
@@ -268,11 +282,15 @@ function generateTrucks(day, opts) {
     };
     let curV = pick(secs(rs[0].time)), curShort = short, cap = tripTarget(curV);
     for (let i = 0; i < rs.length; i++) {
-      if (rs[i].cum - base >= cap) {
-        push(from, i, (rs[i].cum - base) * 1000, curV);
+      let guard = 0;
+      while (rs[i].cum - base >= cap && guard++ < 20) {
+        // SCADA mein readings ka gap ho to ek saath bahut maal dikh jata hai: capacity se 1.5 T se zyada upar ho to
+        // truck capacity par hi niklega, baaki agle truck mein
+        const got = rs[i].cum - base, over = got - cap > 1.5, take = over ? cap : got;
+        push(from, i, take * 1000, curV);
         if (curShort) trucks[trucks.length - 1].remark = 'Truck kam — 2× lead time se pehle wapas';
         busy[curV.no] = secs(rs[i].time);
-        base = rs[i].cum; from = i + 1; vi = (vi + 1) % active.length;
+        base = +(base + take).toFixed(3); from = over ? i : i + 1; vi = (vi + 1) % active.length;
         short = false; curV = pick(secs(rs[i].time)); curShort = short; cap = tripTarget(curV);
       }
     }
@@ -397,10 +415,11 @@ function splitByItem(day, forced) {
   }
   return segs.map(g => mk(R.slice(g.from, g.to + 1), items.find(i => i.code === g.code), g.from ? R[g.from - 1].cum : 0, g.from ? R[g.from - 1].cumBit : 0));
 }
+function fixNote(d) { return d.fixes && d.fixes.length ? ` <span class="flag" title="${esc(d.fixes.join('\n'))}">⚠ SCADA ki ${d.fixes.length} galat reading hatai (${esc(d.fixes[0])}${d.fixes.length > 1 ? ' …' : ''})</span>` : ''; }
 function partsLabel(day) { return splitByItem(day, 'auto').map(p => `${esc(p.mix || '?')} ${f2(p.bitPctSet)}% · ${f2(p.totalT)} MT`).join(' + '); }
 function loadScadaIntoPlant(res) {
   SC = res; DRAFT = null;
-  $('#scadaInfo').innerHTML = `<b>${esc(res.file)}</b> · ${esc(res.meta.work)}<br>` + res.days.map(d => `${dmy(d.date)}: <b>${partsLabel(d)}</b>`).join('<br>');
+  $('#scadaInfo').innerHTML = `<b>${esc(res.file)}</b> · ${esc(res.meta.work)}<br>` + res.days.map(d => `${dmy(d.date)}: <b>${partsLabel(d)}</b>${fixNote(d)}`).join('<br>');
   $('#genPanel').classList.remove('hidden');
   $('#genDate').innerHTML = res.days.map(d => `<option value="${d.date}">${dmy(d.date)} (${d.start.slice(0, 5)}–${d.end.slice(0, 5)})</option>`).join('');
   fillItemSelect($('#genItem'), res.meta.mix);
@@ -1090,7 +1109,7 @@ async function handleChatFile(f) {
       const d = res.days;
       const btn = document.createElement('div'); btn.className = 'confirm';
       btn.innerHTML = `<b>SCADA report padh liya</b><br>${esc(res.meta.work)} · mix Bitumen % se pehchana (Settings ke items)<br>` +
-        d.map(x => `${dmy(x.date)}: <b>${partsLabel(x)}</b> · bitumen ${f3(x.bitKg / 1000)} MT · ${hm(x.start)}–${hm(x.end)}`).join('<br>') +
+        d.map(x => `${dmy(x.date)}: <b>${partsLabel(x)}</b> · bitumen ${f3(x.bitKg / 1000)} MT · ${hm(x.start)}–${hm(x.end)}${fixNote(x)}`).join('<br>') +
         `<div class="row"><button class="btn primary" data-one>🏭 Truck-wise register banao</button>${d.length > 1 ? `<button class="btn success" data-all>📅 Sab ${d.length} din ek saath</button>` : ''}</div>`;
       btn.querySelector('[data-one]').onclick = () => { loadScadaIntoPlant(res); showTab('plant'); $('#btnGenerate').click(); };
       if (d.length > 1) btn.querySelector('[data-all]').onclick = () => { loadScadaIntoPlant(res); showTab('plant'); generateAllDays(); };
