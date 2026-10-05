@@ -47,7 +47,7 @@ function save() {
 }
 function switchWork(id) {
   if (!STORE.works[id]) return;
-  STORE.current = id; DB = STORE.works[id]; save();
+  STORE.current = id; DB = STORE.works[id]; save(); if (gpNeedsFix()) { renumberAllGP(); save(); }
   SC = null; DRAFT = null;
   $('#genPanel').classList.add('hidden'); $('#genTable').innerHTML = ''; $('#genSummary').innerHTML = '';
   $('#scadaInfo').textContent = 'DRUM_MIX_….xlsx (AVN SCADA format)';
@@ -1422,6 +1422,7 @@ function renderAll() {
 load();
 renderWorkSelect();
 renderChatHistory();
+if (DB.runs.length && !+DB.settings.gpBook) setTimeout(() => { if (ensureGpBook()) renderAll(); }, 600);
 if (gpNeedsFix()) { renumberAllGP(); save(); }
 renderAll();
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
