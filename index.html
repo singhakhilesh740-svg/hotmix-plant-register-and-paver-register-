@@ -14,7 +14,7 @@
 </head>
 <body>
 <header class="topbar no-print">
-  <div class="brand"><img src="icon.svg" alt=""><div><b>Hot Mix Plant Register</b><small>v9 · 05-10-2026</small></div>
+  <div class="brand"><img src="icon.svg" alt=""><div><b>Hot Mix Plant Register</b><small>v10 · 05-10-2026</small></div>
     <select id="workSel" class="worksel" title="Kaam (work) chuno"></select></div>
 </header>
 
@@ -26,6 +26,7 @@
   <button data-tab="paver">🛣️ Paver Register</button>
   <button data-tab="progress">📊 Progress</button>
   <button data-tab="tests">🧪 Tests</button>
+  <button data-tab="grad">⚖️ Gradation</button>
   <button data-tab="vehicles">🚚 Vehicles</button>
   <button data-tab="settings">⚙️ Settings</button>
 </nav>
@@ -234,6 +235,23 @@
     </div>
   </section>
 
+  <!-- GRADATION -->
+  <section id="tab-grad" class="tab">
+    <div class="panel no-print">
+      <h3>⚖️ Gradation aur Bitumen Extraction — din-wise</h3>
+      <p class="muted">Jis din jo mix nikla, usi ki sheet banti hai. Tum sirf har sieve ka wazan (aur extraction ke W1–W4) bharo — % retained, cumulative, % passing, PASS / FAIL aur bitumen % apne aap. Tarikh par click karke us din ki sheet kholo.</p>
+      <div class="row"><button class="btn" id="grPrint">🖨 Is din ka print</button><button class="btn" id="grPrintAll">🖨 Saare bhare hue din</button><button class="btn" id="grXls">⬇ Excel (formula ke saath)</button></div>
+      <div id="grDates"></div>
+    </div>
+    <div class="panel"><div id="grBox"></div></div>
+    <div class="panel no-print">
+      <h3>Sieve aur limit (har mix ki)</h3>
+      <p class="muted">Tumhari Excel sheet ke hisaab se bhari hai. Badalna ho to "sieve:lower-upper" likho, comma se alag. Specified bitumen % Settings ke item se aata hai.</p>
+      <div class="tablewrap"><table class="grid" id="grTpl"></table></div>
+      <div class="row"><button class="btn danger" id="grTplReset">↺ Default par wapas</button></div>
+    </div>
+  </section>
+
   <!-- TESTS -->
   <section id="tab-tests" class="tab">
     <div class="panel">
@@ -362,5 +380,6 @@
 <script src="progress.js"></script>
 <script src="paver.js"></script>
 <script src="tests.js"></script>
+<script src="grad.js"></script>
 </body>
 </html>
