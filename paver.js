@@ -80,9 +80,10 @@ function printPv1One(R, staff) {
 $('#pvPrint1').addEventListener('click', () => { const h = printPv1(); h ? doPrint(h) : toast('Print ke liye data nahi'); });
 $('#pvXls1').addEventListener('click', () => {
   const R = paverRows(); if (!R.length) return toast('Data nahi');
-  const a = [['1 Tarikh', '2 Ughdati silak (kg)', '3 Aavak', '4 Kul (kg)', '5 Khata ni nondh', '6 Vaparash (kg)', '7 Chainage', '8 Vistar (sq.m)', '9 Vaparash dar (kg/sq.m)', '10 Kul khata', '11 Niyat dhoran', '12 Sahi', '13 Remark']];
+  const a = [...xlsTop('૧', 'ટેકકોટ, સરફેઈસ ડ્રેસીંગ, લીક્વીડ, સીલકોટ માટે ડામરના છંટકાવની નોંધ (પેવર સાઈટ)', 13),
+    ['તારીખ', 'ડામરની ઉઘડતી સિલક (કિ.ગ્રા.)', 'ડામરની આવક (કિ.ગ્રા.)', 'કુલ ડામરનો જથ્થો (કિ.ગ્રા.)', 'ડામરના છંટકાવ માટે ખાતાની નોંધ', 'ડામરનો વપરાશ કિ.ગ્રામ', 'ડામરનો વપરાશ થયો હોય તે સ્થળ કિ.મી. (ચેઈનેજ)', 'ડામર છંટકાવવાનો વિસ્તાર ચો.મીટર', 'ડામર છંટકાવવાનો વપરાશ દર (કિ.ગ્રા./ચો.મી.)', 'કુલ ખાતા', 'નિયત ધોરણે અથવા નિર્દિષ્ટ વિગતો મુજબ ડામર છંટકાવનો વપરાશ દર', 'જથ્થો અને માપ નોંધનારની સહી', 'રીમાર્કસ']];
   R.forEach(r => a.push([dmy(r.date), Math.round(r.open), r.rcv ? Math.round(r.rcv) : '', Math.round(r.total), r.m.khatu || '', Math.round(r.cons), r.chain || '', Math.round(r.area), +f2(r.rate), r.m.kul || '', r.spec, '', r.calc + (r.m.remark ? '; ' + r.m.remark : '')]));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'Paver-P1');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'પેવર પરિશિષ્ટ-૧');
   XLSX.writeFile(wb, 'Paver_Parishisht1.xlsx');
 });
 
@@ -209,9 +210,10 @@ function printPv2One(rows, staff) {
 $('#pv2Print').addEventListener('click', () => { const h = printPv2(); h ? doPrint(h) : toast('Print ke liye data nahi'); });
 $('#pv2Xls').addEventListener('click', () => {
   const { rows } = pv2Rows(); if (!rows.length) return toast('Data nahi');
-  const a = [['1 Tarikh', '2 Samay', '3 Item', '4 Truck', '5 Garam daamar °C', '6 Mishran °C', '7 Chainage', '8 Sahi', '9 Remark']];
+  const a = [...xlsTop('૨', 'પેવર સાઈટ ઉપર ટેકકોટ માટેના ડામર તથા મિશ્રણ (મીક્સ) ના ઉષ્ણતામાનની નોંધ', 9),
+    ['તારીખ', 'સમય', 'ટેન્ડર આઈટમ નંબર તથા મીશ્રણનો પ્રકાર', 'ટ્રક અથવા ડમ્પર નંબર', 'ગરમ ડામરનું ઉ. (°C)', 'મીશ્રણનું ઉ. (°C)', 'મીશ્રણ જે સ્થળે પાથરવાનું છે તેના કિ.મી. ચેઈનેજ વગેરે', 'ઉષ્ણતામાન નોંધનારની સહી', 'રીમાર્કસ']];
   rows.forEach(r => a.push([dmy(r.date), r.time, r.item, r.veh, r.m.tb || '', r.m.tm || '', r.chain, '', r.m.remark || '']));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'Paver-P2');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'પેવર પરિશિષ્ટ-૨');
   XLSX.writeFile(wb, 'Paver_Parishisht2.xlsx');
 });
 const _renderPaver1 = renderPaver;
@@ -287,9 +289,10 @@ function printPv4One(R, staff) {
 $('#pv4Print').addEventListener('click', () => { const h = printPv4(); h ? doPrint(h) : toast('Print ke liye data nahi'); });
 $('#pv4Xls').addEventListener('click', () => {
   const R = pv4Rows(); if (!R.length) return toast('Data nahi');
-  const a = [['1 Kramank', '2 Tarikh', '3 Item', '4 Samay', '5 Truck', '6 Gate pass', '7 Net (kg)', '8 Din ka kul (T)', '9 Daabi (mm)', '10 Beech (mm)', '11 Jamni (mm)', '12 Sarasari (mm)', '13 Niyat (mm)', '14 L x W', '15 Chainage', '16', '17', '18 Remark']];
+  const a = [...xlsTop('૪', 'પેવર સાઈટ ઉપર કામ ઉપરના ડામર, કપચી, મીશ્રણ મીક્સના વપરાશની નોંધ', 18),
+    ['ક્રમાંક', 'તારીખ', 'ટેન્ડર આઈટમ નંબર તથા આઈટમનું વર્ણન ટૂંકમાં', 'સમય', 'ટ્રક નંબર', 'ગેઈટ પાસ', 'મીશ્રણનું નેટ વજન (કિ.ગ્રા.)', 'દિવસને અંતે પાથરેલ મિશ્રણનો જથ્થો (ટન)', 'ડાબી બાજુ ધાર પાસે (મી.મી.)', 'મધ્ય ભાગમાં (મી.મી.)', 'જમણી બાજુ ધાર પાસે (મી.મી.)', 'સરેરાશ જાડાઈ (મી.મી.)', 'નિયત ધોરણ પ્રમાણેની જાડાઈ (મી.મી.)', 'કેટલા ક્ષેત્રફળમાં પથરામણ થયું લંબાઈ X પહોળાઈ', 'મીશ્રણ જે સ્થળે પાથરવામાં આવે છે તેના કી.મી. ચેઈનેજ વગેરે', 'પેવર સાઈટ ઉપર દેખરેખ રાખનારની સહી', 'ઠેકેદારની સહી', 'રીમાર્કસ']];
   R.forEach(r => a.push([r.sr, dmy(r.date), r.item, r.time, r.veh, r.gp, r.net, r.last ? +f2(r.dayTot) : '', r.lcr[0] ?? '', r.lcr[1] ?? '', r.lcr[2] ?? '', r.avg != null ? +f2(r.avg) : '', r.spec, r.len ? `${f2(r.len)} x ${f2(r.half)}` : '', r.chain, '', '', r.m.remark || '']));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'Paver-P4');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'પેવર પરિશિષ્ટ-૪');
   XLSX.writeFile(wb, 'Paver_Parishisht4.xlsx');
 });
 const _renderPaver12 = renderPaver;

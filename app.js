@@ -347,9 +347,23 @@ function nextGP(g) {
   const p = parseGP(g); if (!p) return firstGP();
   if (p.num != null) return String(p.num + 1);
   const per = +DB.settings.gpPerBook || 50;
-  return p.leaf >= per ? `${p.book + 1}/1` : `${p.book}/${p.leaf + 1}`;
+  return p.leaf >= per ? `${nextBook(p.book)}/1` : `${p.book}/${p.leaf + 1}`;
 }
-function firstGP() { const s = DB.settings; return s.gpBook ? `${+s.gpBook}/${+s.gpLeaf || 1}` : String(+s.gpStart || 1); }
+// Gate pass books ka kram: pehli book Settings se, aage +1; kisi book ka no. alag ho to gpBooks[index] mein
+function bookSeq(n) {
+  const ov = DB.settings.gpBooks || {}, out = []; let cur = +DB.settings.gpBook || 0;
+  for (let i = 0; i < n; i++) { cur = i === 0 ? (+ov[0] || cur) : (+ov[i] || out[i - 1] + 1); out.push(cur); }
+  return out;
+}
+function nextBook(book) { const seq = bookSeq(400), i = seq.indexOf(book); return i >= 0 && i + 1 < seq.length ? seq[i + 1] : book + 1; }
+function renumberAllGP() {   // saare (bina lock wale) register ke gate pass dobara
+  let gp = firstGP();
+  [...DB.runs].sort((a, b) => runKey(a).localeCompare(runKey(b))).forEach(r => {
+    if (isLocked('plant', r.date)) { if (r.trucks.length) gp = nextGP(r.trucks[r.trucks.length - 1].gp); return; }   // lock wale din nahi badlenge
+    gp = numberFrom(r.trucks, 0, gp);
+  });
+}
+function firstGP() { const s = DB.settings; return s.gpBook ? `${bookSeq(1)[0]}/${+s.gpLeaf || 1}` : String(+s.gpStart || 1); }
 const runKey = r => r.date + ' ' + (r.start || '');
 function startGPFor(run) {   // is run se pehle wale aakhri truck ka agla no.
   const prev = DB.runs.filter(r => r.id !== run.id && runKey(r) < runKey(run) && r.trucks.length).sort((a, b) => runKey(a).localeCompare(runKey(b))).pop();
@@ -606,6 +620,11 @@ function regHead(no, title, staff, role = 'plant') {
   return `<h2>પરિશિષ્ટ - ${no}</h2><h4>${title}</h4>
   <div class="meta"><span>કામનું નામ: ${esc(s.workName)}</span><span>એજન્સી: ${esc(s.agency)}</span><span>પ્લાન્ટ: ${esc(s.plant)}</span></div>${staffLine(role, staff)}`;
 }
+// Excel ke upar ki line: parishisht, sheershak, kaam
+function xlsTop(no, title, cols) {
+  const s = DB.settings;
+  return [[`પરિશિષ્ટ - ${no}`], [title], [`કામનું નામ: ${s.workName || ''}`, ...Array(Math.max(0, Math.floor(cols / 3) - 1)).fill(''), `એજન્સી: ${s.agency || ''}`, ...Array(Math.max(0, Math.floor(cols / 3) - 1)).fill(''), `પ્લાન્ટ: ${s.plant || ''}`], []];
+}
 function printP5(runs) { return staffGroups(runs, 'plant', r => r.date).map(g => printP5One(g.items, g.staff)).join(''); }
 function printP3(runs) { return staffGroups(runs, 'plant', r => r.date).map(g => printP3One(g.items, g.staff)).join(''); }
 function printP5One(runs, staff) {
@@ -662,15 +681,17 @@ $('#btnPrintP5').addEventListener('click', () => { const r = runsInRange(); r.le
 $('#btnPrintP3').addEventListener('click', () => { const r = runsInRange(); r.length ? doPrint(printP3(r)) : toast('Koi saved register nahi'); });
 $('#btnXlsPlant').addEventListener('click', () => {
   const runs = runsInRange(); if (!runs.length) return toast('Koi saved register nahi');
-  const p5 = [['Kramank', 'Tarikh', 'Item', 'Truck no.', 'Samay', 'Gate pass no.', 'Gross (kg)', 'Net (kg)', 'Din ka kul (MT)', 'Tare (kg)', 'Remark']];
-  const p3 = [['Tarikh', 'Samay', 'Mix', 'Truck no.', 'Agg temp', 'Tank temp', 'Mix temp', 'Chainage', 'Remark']];
+  const p5 = [...xlsTop('૫', 'હોટમીક્ષ પ્લાન્ટ સાઈટ ઉપર ડામર કામ માટેના મીશ્રણના વજન વગેરેની નોંધ', 11),
+    ['ક્રમાંક', 'તારીખ', 'ટેન્ડરની આઈટમ નંબર તથા તેનું વર્ણન ટૂંકમાં', 'ટ્રક નંબર', 'સમય', 'ગેટ પાસ નંબર', 'ગાડી સાથે મિશ્રણનું વજન (કિ.ગ્રા.)', 'ટ્રકમાં મિશ્રણનું નેટ વજન (કિ.ગ્રા.)', 'દિવસના અંતે કુલ વજન (મે.ટન)', 'ખાલી ટ્રકનું વજન (કિ.ગ્રા.)', 'રીમાર્ક']];
+  const p3 = [...xlsTop('૩', 'હોટમીક્ષ પ્લાન્ટ સાઈટ ઉપર ડામર (એગ્રીગેટ) મીશ્રણના ઉષ્ણતામાનની નોંધ', 9),
+    ['તારીખ', 'સમય', 'મિશ્રણનો પ્રકાર', 'ટ્રક નંબર', 'ગરમ કરેલ એગ્રીગેટનું ઉ. (°C)', 'ટાંકીમાં ગરમ ડામરનું ઉ. (°C)', 'હોટમીક્ષ પ્લાન્ટમાંથી બહાર આવતા મિશ્રણનું ઉ. (°C)', 'મિશ્રણ જે સ્થળે પાથરવાનું છે તેના કિ.મી. ચેઈનેજ', 'રીમાર્ક']];
   runs.forEach(r => r.trucks.forEach((t, i) => {
     p5.push([i + 1, dmy(r.date), itemLabel(r.item) || r.mix, t.veh, t.time, t.gp, t.gross, t.net, i === r.trucks.length - 1 ? +f2(regTotal(r)) : '', t.tare, t.remark]);
     p3.push([dmy(r.date), t.time, r.mix, t.veh, t.aggT, t.tankT, t.mixT, t.chain, t.remark]);
   }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(p5), 'Parishisht-5');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(p3), 'Parishisht-3');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(p5), 'પરિશિષ્ટ-૫');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(p3), 'પરિશિષ્ટ-૩');
   XLSX.writeFile(wb, `Plant_Register_${runs[0].date}_to_${runs[runs.length - 1].date}.xlsx`);
 });
 
@@ -851,9 +872,10 @@ function printP1One(L, staff) {
 $('#btnPrintP1').addEventListener('click', () => doPrint(printP1()));
 $('#btnXlsP1').addEventListener('click', () => {
   const L = buildLedger(); if (!L.length) return toast('Ledger khali hai');
-  const a = [['1 Tarikh', '2 Khulti silak', '3 Invoice no.', '4 Gate pass no.', '5 Jaththo', '6 Kul jaththo', '7 Chhantva mate', '8 Mishran mate', '9 Kul', '10 Vadhel jaththo', '11 Km chainage', '12 Kaam jaththo (T)', '13 Bagad', '14 Dhoran', '15 Tafavat karan', '16 Dekhrekh sahi', '17 Thekedar sahi', '18 Remark']];
+  const a = [...xlsTop('૧', 'ડામરની આવક તથા વપરાશની નોંધ', 18),
+    ['તારીખ', 'ખુલતી સિલક', 'ઇન્ડેન્ટ / ઇન્વોઇસ નંબર', 'ગેઈટ પાસ નંબર', 'જથ્થો', 'કુલ જથ્થો', 'છાંટવા માટે', 'મિશ્રણ માટે', 'કુલ', 'દિવસના અંતે વપરાશ પછીનો વધેલ જથ્થો', 'કામ થયું હોય તેનું સ્થળ કી.મી. ચેઈનેજ', 'થયેલ કામનો જથ્થો ટન', 'ડામરનો બગાડ કંઈ થયો હોય તો', 'કામની નિર્દિષ્ટ વિગતો મુજબ ડામરના વપરાશનું ધોરણ', 'તફાવતનાં કારણો', 'દેખરેખ રાખનારની સહી', 'ઠેકેદારની સહી', 'રીમાર્ક']];
   L.forEach(d => a.push([dmy(d.date), +f3(d.open), d.gps.map(g => g.invNo).join(', '), d.gps.map(g => g.gpNo || g.tanker).join(', '), d.rcv ? +f3(d.rcv) : '', +f3(d.total), d.tack ? +f3(d.tack) : '', d.mixMT ? +f3(d.mixMT) : '', +f3(d.cons), +f3(d.close), d.p1.chain || '', d.mixT ? +f2(d.mixT) : '', d.p1.waste || '', d.mixT ? d.pctTxt : '', d.p1.reason || '', '', '', d.p1.remark || '']));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'Parishisht-1');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'પરિશિષ્ટ-૧');
   XLSX.writeFile(wb, 'Bitumen_Register_P1.xlsx');
 });
 
@@ -909,19 +931,16 @@ function renderSettings() {
     (DB.items.map((it, k) => { const p = itemParams(it); return `<tr><td>${esc(it.code)}</td><td>${esc(it.name)}</td><td>${it.pct}</td><td>${p.th}</td><td>${p.den}</td><td>${f2(1 / (p.den * p.th / 1000))}</td><td>${p.tack ? p.tack : '<span class="muted">nahi</span>'}</td>
       <td>${itemEstQty(it) ? f2(itemEstQty(it)) + (it.estQty ? '' : ' <span class="muted">(Progress se)</span>') : '—'}</td>
       <td>${p.tack && itemEstQty(it) ? f3(itemEstQty(it) / (p.den * p.th / 1000) * p.tack / 1000) + ' MT' : '—'}</td><td><button class="btn sm" data-edit_it="${k}">✏️</button> <button class="btn sm danger" data-delit="${k}">🗑</button></td></tr>`; }).join('') || '<tr><td colspan="10" class="muted">Item add karo (jaise 10 – BM – 3.3%)</td></tr>') + '</tbody>';
-  renderStaff();
+  renderStaff(); renderGpBooks();
   const a = aiCfg(); $('#aiProvider').value = a.provider || 'claude'; $('#aiKey').value = a.key || ''; $('#aiModel').value = a.model || defModel(a.provider || 'claude');
 }
 $('#btnSaveSet').addEventListener('click', () => {
-  const oldFirst = firstGP(), oldPer = DB.settings.gpPerBook;
+  const oldFirst = firstGP(), oldPer = DB.settings.gpPerBook, oldBook = DB.settings.gpBook;
   $$('#setForm [name]').forEach(i => DB.settings[i.name] = i.type === 'number' ? +i.value : i.value.trim());
+  if (DB.settings.gpBook !== oldBook && DB.settings.gpBooks) delete DB.settings.gpBooks[0];   // pehli book ka no. upar se badla
   if ((firstGP() !== oldFirst || DB.settings.gpPerBook !== oldPer) && DB.runs.length &&
       confirm(`Gate pass shuru ${firstGP()} se. Saare saved register ke gate pass no. dobara lagayein?`)) {
-    let gp = firstGP();
-    [...DB.runs].sort((a, b) => runKey(a).localeCompare(runKey(b))).forEach(r => {
-      if (isLocked('plant', r.date)) { if (r.trucks.length) gp = nextGP(r.trucks[r.trucks.length - 1].gp); return; }   // lock wale din nahi badlenge
-      gp = numberFrom(r.trucks, 0, gp);
-    });
+    renumberAllGP();
   }
   save(); toast('Settings save hui'); renderAll();
 });
@@ -937,6 +956,28 @@ $('#itemTable').addEventListener('click', e => {
   const ek = e.target.dataset.edit_it;
   if (ek != null) { const it = DB.items[+ek]; $('#itCode').value = it.code; $('#itName').value = it.name; $('#itPct').value = it.pct; { const p = itemParams(it); $('#itTh').value = p.th; $('#itDen').value = p.den; $('#itTack').value = it.tack || ''; $('#itEst').value = it.estQty || ''; } $('#itName').focus(); return toast('Badal kar "+ Add" dabao'); }
   const k = e.target.dataset.delit; if (k == null) return; DB.items.splice(+k, 1); save(); renderAll(); });
+function renderGpBooks() {
+  const el = $('#gpBooksBox'); if (!el) return;
+  if (!+DB.settings.gpBook) { el.innerHTML = '<p class="muted">Upar "Gate pass book no." bharo (jaise 2102) aur Save dabao — phir yahan har book ka no. dikhega.</p>'; return; }
+  const per = +DB.settings.gpPerBook || 50, used = {};
+  DB.runs.forEach(r => r.trucks.forEach(t => { const p = parseGP(t.gp); if (p && p.book != null) { const u = used[p.book] = used[p.book] || { n: 0, min: 1e9, max: 0, d1: r.date, d2: r.date }; u.n++; u.min = Math.min(u.min, p.leaf); u.max = Math.max(u.max, p.leaf); if (r.date < u.d1) u.d1 = r.date; if (r.date > u.d2) u.d2 = r.date; } }));
+  const seq = bookSeq(400); let last = 0; seq.forEach((b, i) => { if (used[b]) last = i; });
+  const show = seq.slice(0, last + 4), ov = DB.settings.gpBooks || {};
+  el.innerHTML = `<div class="tablewrap"><table class="grid"><thead><tr><th>Book</th><th>Book no.</th><th>Leaf</th><th>Use hue</th><th>Dates</th></tr></thead><tbody>` +
+    show.map((b, i) => { const u = used[b];
+      return `<tr><td>${i + 1}</td><td><input type="number" data-gpb="${i}" value="${b}" style="width:100px">${ov[i] ? ' <span class="pill">badla hua</span>' : ''}</td>
+        <td>${b}/1 – ${b}/${per}</td><td>${u ? `${u.n} (${b}/${u.min} – ${b}/${u.max})` : '<span class="muted">abhi nahi</span>'}</td><td>${u ? dmy(u.d1) + (u.d2 !== u.d1 ? ' – ' + dmy(u.d2) : '') : ''}</td></tr>`; }).join('') + '</tbody></table></div>';
+}
+$('#gpBooksBox').addEventListener('change', e => {
+  const i = e.target.dataset.gpb; if (i == null) return;
+  const v = +e.target.value; if (!v) return renderGpBooks();
+  DB.settings.gpBooks = DB.settings.gpBooks || {};
+  const auto = +i === 0 ? +DB.settings.gpBook : bookSeq(+i)[+i - 1] + 1;   // jo apne aap aata
+  if (v === auto) delete DB.settings.gpBooks[i]; else DB.settings.gpBooks[i] = v;
+  if (+i === 0) { DB.settings.gpBook = v; delete DB.settings.gpBooks[0]; }
+  if (DB.runs.length && confirm(`Book ${+i + 1} ka no. ${v} hua. Saare saved register ke gate pass no. is hisaab se dobara lagayein?\n(Lock wale din nahi badlenge)`)) renumberAllGP();
+  save(); renderSettings(); toast('Gate pass book update hui');
+});
 function renderStaff() {
   const L = [...(DB.staff || [])].sort((a, b) => (a.role + (a.from || '')).localeCompare(b.role + (b.from || '')));
   $('#staffTable').innerHTML = `<thead><tr><th>Site</th><th>Naam</th><th>Hodda</th><th>Kab se</th><th>Kab tak</th><th>Lock</th><th></th></tr></thead><tbody>` +
