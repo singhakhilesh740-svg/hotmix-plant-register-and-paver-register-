@@ -242,7 +242,7 @@
         <label>Agency<input name="agency"></label>
         <label>Plant / location<input name="plant"></label>
         <label>Division<input name="division"></label>
-        <label>Gate pass book no.<input name="gpBook" type="number" placeholder="1790"></label>
+        <label>Pehli gate pass book ka no.<input name="gpBook" type="number" placeholder="2105"></label>
         <label>Pehla leaf no.<input name="gpLeaf" type="number" value="1"></label>
         <label>Ek book mein leaf<input name="gpPerBook" type="number" value="50"></label>
         <label>Mix temp min °C<input name="tempMin" type="number" value="140"></label>
@@ -259,7 +259,8 @@
     </div>
     <div class="panel">
       <h3>Gate pass books</h3>
-      <p class="muted">Har book mein upar likhe jitne leaf (default 50): jaise 2102/1 … 2102/50, phir agli book. Agli book ka no. apne aap +1 aata hai; alag ho to yahan us book ka no. badal do — uske aage ki books usi se +1 chalengi.</p>
+      <p class="muted">Har book mein 50 leaf: jaise 2105/1 … 2105/50, phir 2106/1 … 2106/50, phir 2107/1. Kisi book ka pehla no. alag ho to neeche badal do (jaise 2110/1 ya 2106/2) — uske aage ki books usi se +1 chalengi.</p>
+      <div class="row"><button class="btn" id="btnGpRenum">🔄 Saare register ke gate pass no. dobara lagao</button></div>
       <div id="gpBooksBox"></div>
     </div>
     <div class="panel">

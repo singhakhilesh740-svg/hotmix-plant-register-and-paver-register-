@@ -353,9 +353,28 @@ const regTotal = r => r.trucks.reduce((a, t) => a + (+t.net || 0), 0) / 1000;
 function parseGP(g) { const m = String(g ?? '').trim().match(/^(\d+)\s*\/\s*(\d+)$/); return m ? { book: +m[1], leaf: +m[2] } : (/^\d+$/.test(String(g ?? '').trim()) ? { num: +g } : null); }
 function nextGP(g) {
   const p = parseGP(g); if (!p) return firstGP();
-  if (p.num != null) return String(p.num + 1);
+  if (p.num != null) return +DB.settings.gpBook ? firstGP() : String(p.num + 1);
   const per = +DB.settings.gpPerBook || 50;
-  return p.leaf >= per ? `${nextBook(p.book)}/1` : `${p.book}/${p.leaf + 1}`;
+  if (p.leaf < per) return `${p.book}/${p.leaf + 1}`;
+  const nb = nextBook(p.book); return `${nb}/${bookLeaf(bookSeq(400).indexOf(nb))}`;
+}
+// book index ka pehla leaf (default 1; Settings > Gate pass books se badal sakte ho)
+function bookLeaf(i) { const s = DB.settings; return i === 0 ? (+s.gpLeaf || 1) : (i > 0 && +(s.gpLeafs || {})[i]) || 1; }
+// Book no. nahi bhara ho to pucho
+function ensureGpBook() {
+  if (+DB.settings.gpBook) return true;
+  const v = prompt('Pehli gate pass book ka no. kya hai? (jaise 2105)\nGate pass 2105/1, 2105/2 … 2105/50, phir 2106/1 … aise chalenge.');
+  const m = String(v || '').trim().match(/^(\d+)(?:\s*\/\s*(\d+))?$/);
+  if (!m) { toast('Gate pass book no. zaroori hai — Settings mein bharo'); return false; }
+  DB.settings.gpBook = +m[1]; if (m[2]) DB.settings.gpLeaf = +m[2];
+  if (DB.runs.length) renumberAllGP();
+  save(); return true;
+}
+// purane galat no. (sirf 51, 52… ya 2105/51) ho to theek karo
+function gpNeedsFix() {
+  if (!+DB.settings.gpBook) return false;
+  const per = +DB.settings.gpPerBook || 50;
+  return DB.runs.some(r => !isLocked('plant', r.date) && r.trucks.some(t => { const p = parseGP(t.gp); return !p || p.num != null || p.leaf > per; }));
 }
 // Gate pass books ka kram: pehli book Settings se, aage +1; kisi book ka no. alag ho to gpBooks[index] mein
 function bookSeq(n) {
@@ -367,7 +386,7 @@ function nextBook(book) { const seq = bookSeq(400), i = seq.indexOf(book); retur
 function renumberAllGP() {   // saare (bina lock wale) register ke gate pass dobara
   let gp = firstGP();
   [...DB.runs].sort((a, b) => runKey(a).localeCompare(runKey(b))).forEach(r => {
-    if (isLocked('plant', r.date)) { if (r.trucks.length) gp = nextGP(r.trucks[r.trucks.length - 1].gp); return; }   // lock wale din nahi badlenge
+    if (isLocked('plant', r.date)) { if (r.trucks.length && parseGP(r.trucks[r.trucks.length - 1].gp)?.book != null) gp = nextGP(r.trucks[r.trucks.length - 1].gp); return; }   // lock wale din nahi badlenge
     gp = numberFrom(r.trucks, 0, gp);
   });
 }
@@ -470,6 +489,7 @@ $('#btnGenerate').addEventListener('click', () => {
   const day = SC.days.find(d => d.date === $('#genDate').value);
   if (isLocked('plant', day.date)) return lockMsg('plant', day.date);
   const parts = splitByItem(day, $('#genItem').value);
+  if (!ensureGpBook()) return;
   if (parts.length > 1) { toast(`Is din ${parts.length} mix mile — sab ka register ban raha hai`); return generateDays([day]); }
   try {
     const p = parts[0];
@@ -497,6 +517,7 @@ function sameRun(r, day, file) {
 }
 function generateAllDays() { if (SC) generateDays(SC.days); }
 function generateDays(days) {
+  if (!ensureGpBook()) return;
   if (!SC) return;
   const act = DB.vehicles.filter(v => v.active !== false);
   if (!act.length) return toast('Pehle Vehicles tab mein trucks add karo.');
@@ -973,8 +994,8 @@ $('#btnSaveSet').addEventListener('click', () => {
   const oldFirst = firstGP(), oldPer = DB.settings.gpPerBook, oldBook = DB.settings.gpBook;
   $$('#setForm [name]').forEach(i => DB.settings[i.name] = i.type === 'number' ? +i.value : i.value.trim());
   if (DB.settings.gpBook !== oldBook && DB.settings.gpBooks) delete DB.settings.gpBooks[0];   // pehli book ka no. upar se badla
-  if ((firstGP() !== oldFirst || DB.settings.gpPerBook !== oldPer) && DB.runs.length &&
-      confirm(`Gate pass shuru ${firstGP()} se. Saare saved register ke gate pass no. dobara lagayein?`)) {
+  if (DB.runs.length && (gpNeedsFix() || ((firstGP() !== oldFirst || DB.settings.gpPerBook !== oldPer) &&
+      confirm(`Gate pass shuru ${firstGP()} se. Saare saved register ke gate pass no. dobara lagayein?`)))) {
     renumberAllGP();
   }
   save(); toast('Settings save hui'); renderAll();
@@ -998,19 +1019,22 @@ function renderGpBooks() {
   DB.runs.forEach(r => r.trucks.forEach(t => { const p = parseGP(t.gp); if (p && p.book != null) { const u = used[p.book] = used[p.book] || { n: 0, min: 1e9, max: 0, d1: r.date, d2: r.date }; u.n++; u.min = Math.min(u.min, p.leaf); u.max = Math.max(u.max, p.leaf); if (r.date < u.d1) u.d1 = r.date; if (r.date > u.d2) u.d2 = r.date; } }));
   const seq = bookSeq(400); let last = 0; seq.forEach((b, i) => { if (used[b]) last = i; });
   const show = seq.slice(0, last + 4), ov = DB.settings.gpBooks || {};
-  el.innerHTML = `<div class="tablewrap"><table class="grid"><thead><tr><th>Book</th><th>Book no.</th><th>Leaf</th><th>Use hue</th><th>Dates</th></tr></thead><tbody>` +
+  el.innerHTML = `<div class="tablewrap"><table class="grid"><thead><tr><th>Book</th><th>Pehla gate pass no.</th><th>Leaf</th><th>Use hue</th><th>Dates</th></tr></thead><tbody>` +
     show.map((b, i) => { const u = used[b];
-      return `<tr><td>${i + 1}</td><td><input type="number" data-gpb="${i}" value="${b}" style="width:100px">${ov[i] ? ' <span class="pill">badla hua</span>' : ''}</td>
-        <td>${b}/1 – ${b}/${per}</td><td>${u ? `${u.n} (${b}/${u.min} – ${b}/${u.max})` : '<span class="muted">abhi nahi</span>'}</td><td>${u ? dmy(u.d1) + (u.d2 !== u.d1 ? ' – ' + dmy(u.d2) : '') : ''}</td></tr>`; }).join('') + '</tbody></table></div>';
+      return `<tr><td>${i + 1}</td><td><input type="text" data-gpb="${i}" value="${b}/${bookLeaf(i)}" style="width:110px">${ov[i] || (i && (DB.settings.gpLeafs || {})[i]) ? ' <span class="pill">badla hua</span>' : ''}</td>
+        <td>${b}/${bookLeaf(i)} – ${b}/${per}</td><td>${u ? `${u.n} (${b}/${u.min} – ${b}/${u.max})` : '<span class="muted">abhi nahi</span>'}</td><td>${u ? dmy(u.d1) + (u.d2 !== u.d1 ? ' – ' + dmy(u.d2) : '') : ''}</td></tr>`; }).join('') + '</tbody></table></div>';
 }
 $('#gpBooksBox').addEventListener('change', e => {
   const i = e.target.dataset.gpb; if (i == null) return;
-  const v = +e.target.value; if (!v) return renderGpBooks();
-  DB.settings.gpBooks = DB.settings.gpBooks || {};
+  const m = String(e.target.value).trim().match(/^(\d+)(?:\s*\/\s*(\d+))?$/);
+  const v = m ? +m[1] : 0, lf = m && m[2] ? +m[2] : 1;
+  if (!v || lf < 1 || lf > (+DB.settings.gpPerBook || 50)) { toast('Aise likho: 2106/1'); return renderGpBooks(); }
+  DB.settings.gpBooks = DB.settings.gpBooks || {}; DB.settings.gpLeafs = DB.settings.gpLeafs || {};
+  if (+i === 0) DB.settings.gpLeaf = lf; else if (lf > 1) DB.settings.gpLeafs[i] = lf; else delete DB.settings.gpLeafs[i];
   const auto = +i === 0 ? +DB.settings.gpBook : bookSeq(+i)[+i - 1] + 1;   // jo apne aap aata
   if (v === auto) delete DB.settings.gpBooks[i]; else DB.settings.gpBooks[i] = v;
   if (+i === 0) { DB.settings.gpBook = v; delete DB.settings.gpBooks[0]; }
-  if (DB.runs.length && confirm(`Book ${+i + 1} ka no. ${v} hua. Saare saved register ke gate pass no. is hisaab se dobara lagayein?\n(Lock wale din nahi badlenge)`)) renumberAllGP();
+  if (DB.runs.length && confirm(`Book ${+i + 1} ab ${v}/${lf} se shuru. Saare saved register ke gate pass no. is hisaab se dobara lagayein?\n(Lock wale din nahi badlenge)`)) renumberAllGP();
   save(); renderSettings(); toast('Gate pass book update hui');
 });
 function renderStaff() {
@@ -1398,5 +1422,12 @@ function renderAll() {
 load();
 renderWorkSelect();
 renderChatHistory();
+if (gpNeedsFix()) { renumberAllGP(); save(); }
 renderAll();
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+$('#btnGpRenum').addEventListener('click', () => {
+  if (!ensureGpBook()) return;
+  if (!DB.runs.length) return toast('Abhi koi register saved nahi');
+  if (!confirm(`Saare saved register ke gate pass ${firstGP()} se dobara lagenge (lock wale din nahi badlenge). Theek hai?`)) return;
+  renumberAllGP(); save(); renderAll(); toast('Gate pass no. dobara lag gaye');
+});
