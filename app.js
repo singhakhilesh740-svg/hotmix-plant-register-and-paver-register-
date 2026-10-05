@@ -326,6 +326,11 @@ function generateTrucks(day, opts) {
       }
     }
   }
+  // Trucks ka jod hamesha SCADA ke total ke barabar (100 kg se kam bacha maal ya rounding aakhri truck mein)
+  if (trucks.length) {
+    const delta = Math.round(rs[rs.length - 1].cum * 1000) - trucks.reduce((x, t) => x + t.net, 0);
+    if (delta && Math.abs(delta) <= 1000) { const L = trucks[trucks.length - 1]; L.net += delta; L.gross = L.net + L.tare; }
+  }
   // Register total SCADA se thoda kam (practical weighbridge vs SCADA farak) — kabhi zyada nahi
   const dMin = (+DB.settings.diffMin || 0) / 100, dMax = (+DB.settings.diffMax || 0) / 100;
   let run = 0;
@@ -486,7 +491,9 @@ function makeRun(p, trucks, id) {
 // same din + samay overlap = wahi production (dusri file se pehle save hua ho tab bhi)
 function sameRun(r, day, file) {
   if (r.date !== day.date) return false;
-  return !(hm(r.end) < hm(day.start) || hm(r.start) > hm(day.end));   // samay overlap = wahi production
+  // samay sach mein overlap ho tabhi "wahi production" (second tak; sirf kinara chhoone se nahi)
+  const sc = t => { const [h, m, x] = String(t || '0:0:0').split(':').map(Number); return h * 3600 + m * 60 + (x || 0); };
+  return sc(r.start) < sc(day.end) && sc(day.start) < sc(r.end);
 }
 function generateAllDays() { if (SC) generateDays(SC.days); }
 function generateDays(days) {
@@ -499,24 +506,24 @@ function generateDays(days) {
   const already = parts.filter(p => DB.runs.some(r => sameRun(r, p, SC.file)));
   let replace = true;
   if (already.length) replace = confirm(`${[...new Set(already.map(p => dmy(p.date)))].join(', ')} ka register pehle se saved hai.\n\nOK = dobara bana kar replace karo\nCancel = unhe chhod do, baaki banao`);
-  const done = [], busyByDate = {};
+  const done = [], busyByDate = {}, made = new Set();
   try {
     parts.forEach(p => {
       if (isLocked('plant', p.date)) { done.push({ date: p.date, mix: p.mix, n: '—', scada: p.totalT, reg: DB.runs.filter(r => sameRun(r, p, SC.file)).reduce((a, r) => a + regTotal(r), 0), gp: '🔒 lock (chhoda)' }); return; }
-      const olds = DB.runs.filter(r => sameRun(r, p, SC.file));
+      const olds = DB.runs.filter(r => sameRun(r, p, SC.file) && !made.has(r.id));   // isi baar bane hisse kabhi nahi hatenge
       if (olds.length && !replace) { done.push({ date: p.date, mix: p.mix, n: '—', scada: p.totalT, reg: olds.reduce((a, r) => a + regTotal(r), 0), gp: 'pehle se saved (chhoda)' }); return; }
       DB.runs = DB.runs.filter(r => !olds.includes(r));
       busyByDate[p.date] = busyByDate[p.date] || {};
       const trucks = generateTrucks(p, { startVeh, tank, useTripper: true, busy: busyByDate[p.date] });
       const run = makeRun(p, trucks, olds[0]?.id);
-      numberFrom(trucks, 0, startGPFor(run)); DB.runs.push(run);
+      numberFrom(trucks, 0, startGPFor(run)); DB.runs.push(run); made.add(run.id);
       const last = trucks[trucks.length - 1]?.veh; const i = act.findIndex(v => v.no === last);
       if (i >= 0) startVeh = act[(i + 1) % act.length].no;
       done.push({ date: p.date, mix: `${p.mix} (${f2(p.bitPctSet)}%)`, n: trucks.length, scada: p.totalT, reg: trucks.reduce((a, t) => a + t.net, 0) / 1000, gp: trucks.length ? `${trucks[0].gp} – ${trucks[trucks.length - 1].gp}` : '' });
     });
   } catch (err) { save(); renderAll(); return toast(err.message); }
   // aage ke saved din ho to unka gate pass numbering aage badhao
-  const mine = DB.runs.filter(r => parts.some(p => sameRun(r, p, SC.file))).sort((a, b) => runKey(a).localeCompare(runKey(b)));
+  const mine = DB.runs.filter(r => made.has(r.id)).sort((a, b) => runKey(a).localeCompare(runKey(b)));
   const lastRun = mine[mine.length - 1];
   if (lastRun && DB.runs.some(r => runKey(r) > runKey(lastRun)) && confirm('Aage ke saved din ke gate pass no. bhi is hisaab se aage badha dein?')) cascadeGP(lastRun);
   save(); DRAFT = null; $('#genTable').innerHTML = ''; $('#btnSaveRun').classList.add('hidden');
