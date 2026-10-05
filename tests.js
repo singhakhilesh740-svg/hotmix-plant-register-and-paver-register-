@@ -1,10 +1,18 @@
 /* ================= Test schedule — MoRTH Section 900 (5th rev.) ke minimum frequency par =================
    Sirf GINTI batata hai (kitne test lagte hain / kitne hue). Test ke result app nahi banata — wo lab se aate hain. */
 const TS_BASIS = { tonne: 'har N tonne mix (min/din)', cum: 'har N cum aggregate/material', sqm: 'har N sq.m', day: 'N test roz', truck: 'har N-ve truck par', lot: 'har lot / tanker', source: 'har source par ek baar', regular: 'lagataar (ginti nahi)' };
-const TS_GRP = { BINDER: 'Bitumen (binder)', TACK: 'Tack coat', BM: 'Bituminous Macadam / BSG', DBM: 'DBM / SDBC / BC', GSB: 'Granular Sub-base (GSB)', WMM: 'Wet Mix Macadam (WMM)', OTHER: 'Anya (is kaam ke)' };
+const TS_GRP = { AGG: 'Coarse aggregate (sab item combined)', BINDER: 'Bitumen (binder)', TACK: 'Tack coat', BM: 'Bituminous Macadam / BSG', DBM: 'DBM / SDBC / BC', GSB: 'Granular Sub-base (GSB)', WMM: 'Wet Mix Macadam (WMM)', OTHER: 'Anya (is kaam ke)' };
+function TS_AGG_SEED() {
+  const T = (name, basis, n, ref) => ({ id: uid(), grp: 'AGG', name, basis, n, minDay: 0, ref });
+  return [T('Aggregate Impact Value / Los Angeles Abrasion', 'cum', 350, 'IS:2386 (P-4)'), T('Flakiness + Elongation Index', 'cum', 350, 'IS:2386 (P-1)'),
+    T('Stripping value of aggregate', 'source', 1, 'IS:6241'), T('Water absorption of aggregate', 'source', 1, 'IS:2386 (P-3)'), T('Soundness (Na / Mg sulphate)', 'source', 1, 'IS:2386 (P-5)')];
+}
+// coarse aggregate (6.3 mm se upar) ka hissa — andaza; Tests tab mein badal sakte ho
+function tsCoarse(it) { const c = (tsDB().coarse || {})[it.code]; if (c != null && c !== '') return +c; const n = (it.name || '').toUpperCase(); return /SDBC|BC/.test(n) && !/DBM/.test(n) ? 55 : /DBM/.test(n) ? 60 : /BSG/.test(n) ? 60 : 70; }
 function TS_SEED() {
   const T = (grp, name, basis, n, minDay, ref) => ({ id: uid(), grp, name, basis, n: n || 0, minDay: minDay || 0, ref: ref || '' });
   return [
+    ...TS_AGG_SEED(),
     T('BINDER', 'Quality of binder (penetration, softening pt., viscosity, ductility …)', 'lot', 1, 0, 'IS:73 / IS:8887'),
     T('TACK', 'Quality of binder (emulsion / bitumen)', 'lot', 1, 0, 'IS:8887 / IS:73'),
     T('TACK', 'Binder temperature for application', 'regular', 0, 0, ''),
@@ -58,13 +66,15 @@ function tsCat(d) {
 }
 function tsDB() {
   if (!DB.tests) DB.tests = { defs: TS_SEED(), done: {}, manual: {}, aggDen: 1.5 };
-  const t = DB.tests; t.done = t.done || {}; t.manual = t.manual || {}; t.aggDen = +t.aggDen || 1.5; t.defs = t.defs || TS_SEED();
+  const t = DB.tests; t.done = t.done || {}; t.coarse = t.coarse || {}; if (t.combine == null) t.combine = true;
+  if (t.defs && !t.defs.some(d => d.grp === 'AGG')) t.defs.unshift(...TS_AGG_SEED()); t.manual = t.manual || {}; t.aggDen = +t.aggDen || 1.5; t.defs = t.defs || TS_SEED();
   return t;
 }
 function tsKind(it) { const n = (it.name || '').toUpperCase(); return /DBM|SDBC|BC/.test(n) ? 'DBM' : 'BM'; }
 // har "section" = ek material jis par test lagte hain: {key, title, grp, T, cum, sqm, trucks, lots, days:[{date,T,cum,sqm,trucks}]}
 function tsSections() {
-  const t = tsDB(), out = [];
+  const t = tsDB(), out = [], aggM = {};
+  const aggNames = new Set(t.defs.filter(d => d.grp === 'AGG').map(d => d.name));
   const lots = (DB.gatepasses || []).length;
   out.push({ key: 'BINDER', grp: 'BINDER', title: 'Bitumen (binder)', lots, info: `${lots} tanker / lot (Bitumen tab ke gatepass)`, days: [] });
   const runs = [...DB.runs].sort((a, b) => runKey(a).localeCompare(runKey(b)));
@@ -72,13 +82,16 @@ function tsSections() {
     const p = itemParams(it), perT = p.den && p.th ? 1 / (p.den * p.th / 1000) : 0, m = {};
     runs.filter(r => r.item == it.code).forEach(r => { const d = m[r.date] = m[r.date] || { date: r.date, T: 0, trucks: 0 }; d.T += regTotal(r); d.trucks += r.trucks.length; });
     const days = Object.values(m).sort((a, b) => a.date.localeCompare(b.date));
-    days.forEach(d => { d.cum = d.T * (1 - (+it.pct || 0) / 100) / t.aggDen; d.sqm = d.T * perT; });
+    days.forEach(d => { d.cum = d.T * (1 - (+it.pct || 0) / 100) * tsCoarse(it) / 100 / t.aggDen; d.sqm = d.T * perT;
+      const g = aggM[d.date] = aggM[d.date] || { date: d.date, T: 0, cum: 0, sqm: 0, trucks: 0 }; g.T += d.T; g.cum += d.cum; });
     const sum = k => days.reduce((s, d) => s + d[k], 0);
     const base = { T: sum('T'), cum: sum('cum'), sqm: sum('sqm'), trucks: sum('trucks'), days };
-    out.push({ key: 'IT' + it.code, grp: tsKind(it), title: `Item ${it.code} – ${it.name}`, ...base,
-      info: `${f2(base.T)} MT mix · ${days.length} din · ~${Math.round(base.cum)} cum aggregate · ${Math.round(base.sqm)} sq.m · ${base.trucks} truck` });
+    out.push({ key: 'IT' + it.code, grp: tsKind(it), skip: t.combine ? aggNames : null, title: `Item ${it.code} – ${it.name}`, ...base,
+      info: `${f2(base.T)} MT mix · ${days.length} din · ~${Math.round(base.cum)} cum coarse aggregate · ${Math.round(base.sqm)} sq.m · ${base.trucks} truck` });
     if (p.tack) out.push({ key: 'TK' + it.code, grp: 'TACK', title: `Tack coat – ${it.name} ke neeche`, ...base, lots, info: `${Math.round(base.sqm)} sq.m · ${days.length} din` });
   });
+  if (t.combine) { const days = Object.values(aggM).sort((a, b) => a.date.localeCompare(b.date)), cum = days.reduce((a, d) => a + d.cum, 0), T = days.reduce((a, d) => a + d.T, 0);
+    out.splice(1, 0, { key: 'AGG', grp: 'AGG', title: 'Coarse aggregate — sab item combined (ek source)', T, cum, sqm: 0, trucks: 0, days, info: `~${Math.round(cum)} cum coarse aggregate · ${days.length} din (${DB.items.map(i => i.name + ' ' + tsCoarse(i) + '%').join(', ')})` }); }
   ['GSB', 'WMM', 'OTHER'].forEach(g => { const mq = t.manual[g] || {}; if (!(+mq.cum || +mq.sqm || +mq.days || (g === 'OTHER' && t.defs.some(d => d.grp === 'OTHER')))) return;
     out.push({ key: g, grp: g, title: TS_GRP[g], T: +mq.T || 0, cum: +mq.cum || 0, sqm: +mq.sqm || 0, trucks: 0, lots: 1, nDays: +mq.days || 0, days: [], info: `${+mq.cum || 0} cum · ${+mq.sqm || 0} sq.m · ${+mq.days || 0} din (haath se bhara)` }); });
   return out;
@@ -111,7 +124,7 @@ function tsFreqText(d) {
 }
 function tsRows() {
   const t = tsDB(), R = [];
-  tsSections().forEach(s => t.defs.filter(d => d.grp === s.grp).forEach(d => {
+  tsSections().forEach(s => t.defs.filter(d => d.grp === s.grp && !(s.skip && s.skip.has(d.name))).forEach(d => {
     const req = tsReq(d, s), k = s.key + ':' + d.id, done = +t.done[k] || 0;
     R.push({ s, d, k, req, done, cat: tsCat(d), bal: req == null ? null : req - done });
   }));
@@ -123,7 +136,7 @@ function tsDaily() {
   tsSections().forEach(s => { const acc = { cum: 0, sqm: 0, trucks: 0 };
     s.days.forEach(x => {
       const due = [];
-      t.defs.filter(d => d.grp === s.grp).forEach(d => { let n = 0;
+      t.defs.filter(d => d.grp === s.grp && !(s.skip && s.skip.has(d.name))).forEach(d => { let n = 0;
         if (d.basis === 'tonne') n = Math.max(+d.minDay || 0, tsCeil(x.T, d.n));
         else if (d.basis === 'day') n = +d.n || 0;
         else if (d.basis === 'cum' || d.basis === 'sqm') n = tsCeil(acc[d.basis] + x[d.basis], d.n) - tsCeil(acc[d.basis], d.n);
@@ -157,6 +170,8 @@ function renderTests() {
       <td><input type="number" data-tsf="n" data-tsid="${d.id}" value="${d.n || ''}" style="width:70px"></td><td><input type="number" data-tsf="minDay" data-tsid="${d.id}" value="${d.minDay || ''}" style="width:60px"></td>
       <td><button class="btn sm danger" data-tsdel="${d.id}">🗑</button></td></tr>`).join('') + '</tbody>';
   $('#tsAggDen').value = t.aggDen;
+  $('#tsAggBox').innerHTML = `<label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)"><input type="checkbox" id="tsCombine" ${t.combine ? 'checked' : ''}> Sab item ka aggregate ek hi source (quarry) ka hai — aggregate ke test combined gino</label>
+    <span class="muted">Coarse aggregate %:</span> ${DB.items.map(i => `<label style="flex-direction:row;align-items:center;gap:4px">${esc(i.name)}<input type="number" data-tscoarse="${esc(i.code)}" value="${tsCoarse(i)}" style="width:64px"></label>`).join(' ')}`;
   ['GSB', 'WMM', 'OTHER'].forEach(g => ['cum', 'sqm', 'days'].forEach(f => { const i = $(`[data-tsman="${g}:${f}"]`); if (i) i.value = (t.manual[g] || {})[f] || ''; }));
 }
 document.addEventListener('change', e => {
@@ -164,6 +179,8 @@ document.addEventListener('change', e => {
   if (d.tsdone) { t.done[d.tsdone] = Math.max(0, +e.target.value || 0); save(); return renderTests(); }
   if (d.tsf) { const x = t.defs.find(v => v.id === d.tsid); if (!x) return; x[d.tsf] = ['n', 'minDay'].includes(d.tsf) ? +e.target.value || 0 : e.target.value.trim(); save(); return renderTests(); }
   if (d.tsman) { const [g, f] = d.tsman.split(':'); (t.manual[g] = t.manual[g] || {})[f] = +e.target.value || 0; save(); return renderTests(); }
+  if (e.target.id === 'tsCombine') { t.combine = e.target.checked; save(); return renderTests(); }
+  if (d.tscoarse != null) { t.coarse[d.tscoarse] = Math.min(100, Math.max(0, +e.target.value || 0)); save(); return renderTests(); }
   if (e.target.id === 'tsAggDen') { t.aggDen = +e.target.value || 1.5; save(); renderTests(); }
 });
 document.addEventListener('click', e => {

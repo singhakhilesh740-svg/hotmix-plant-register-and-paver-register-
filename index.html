@@ -14,7 +14,7 @@
 </head>
 <body>
 <header class="topbar no-print">
-  <div class="brand"><img src="icon.svg" alt=""><div><b>Hot Mix Plant Register</b><small>v8 · 05-10-2026</small></div>
+  <div class="brand"><img src="icon.svg" alt=""><div><b>Hot Mix Plant Register</b><small>v9 · 05-10-2026</small></div>
     <select id="workSel" class="worksel" title="Kaam (work) chuno"></select></div>
 </header>
 
@@ -242,6 +242,8 @@
       ⚠ Frequency MoRTH 5th revision (Table 900-3/900-4) ke hisaab se bhari hai — apne tender / QAP se ek baar milao; farak ho to neeche "Test list" mein badal do.</p>
       <div class="row no-print"><button class="btn" id="tsPrint">🖨 Print</button><button class="btn" id="tsXls">⬇ Excel</button>
         <label style="flex-direction:row;align-items:center;gap:6px">Aggregate loose density (T/cum)<input id="tsAggDen" type="number" step="0.05" style="width:80px"></label></div>
+      <div class="row no-print" id="tsAggBox"></div>
+      <p class="muted no-print">Impact value / flakiness sirf coarse aggregate (6.3 mm se upar) par lagte hain, isliye ginti coarse aggregate ki matra par hai. Coarse % andaze se bhara hai — apne job mix formula se sahi kar lo. Quarry alag-alag ho to tick hata do.</p>
       <div id="tsSummary"></div>
     </div>
     <div class="panel"><h3>Din-wise test</h3><div id="tsDaily"></div></div>
@@ -256,7 +258,7 @@
     <div class="panel">
       <h3>Test list / frequency (badal sakte ho)</h3>
       <div class="grid4">
-        <label>Material<select id="tsNewGrp"><option value="OTHER">Anya (is kaam ke)</option><option value="BINDER">Bitumen</option><option value="TACK">Tack coat</option><option value="BM">BM / BSG</option><option value="DBM">DBM / SDBC / BC</option><option value="GSB">GSB</option><option value="WMM">WMM</option></select></label>
+        <label>Material<select id="tsNewGrp"><option value="OTHER">Anya (is kaam ke)</option><option value="AGG">Coarse aggregate (combined)</option><option value="BINDER">Bitumen</option><option value="TACK">Tack coat</option><option value="BM">BM / BSG</option><option value="DBM">DBM / SDBC / BC</option><option value="GSB">GSB</option><option value="WMM">WMM</option></select></label>
         <label>Varg<select id="tsNewCat"><option value="oth">Anya</option><option value="agg">Aggregate</option><option value="bit">Bitumen</option><option value="mix">Extraction / Gradation</option></select></label>
         <label>Test ka naam<input id="tsNewName"></label>
         <label>IS / code<input id="tsNewRef"></label>
