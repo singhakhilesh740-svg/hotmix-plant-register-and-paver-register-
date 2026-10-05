@@ -14,7 +14,7 @@
 </head>
 <body>
 <header class="topbar no-print">
-  <div class="brand"><img src="icon.svg" alt=""><div><b>Hot Mix Plant Register</b><small>v6 · 05-10-2026</small></div>
+  <div class="brand"><img src="icon.svg" alt=""><div><b>Hot Mix Plant Register</b><small>v8 · 05-10-2026</small></div>
     <select id="workSel" class="worksel" title="Kaam (work) chuno"></select></div>
 </header>
 
@@ -25,6 +25,7 @@
   <button data-tab="bitumen">🛢️ Bitumen</button>
   <button data-tab="paver">🛣️ Paver Register</button>
   <button data-tab="progress">📊 Progress</button>
+  <button data-tab="tests">🧪 Tests</button>
   <button data-tab="vehicles">🚚 Vehicles</button>
   <button data-tab="settings">⚙️ Settings</button>
 </nav>
@@ -233,6 +234,42 @@
     </div>
   </section>
 
+  <!-- TESTS -->
+  <section id="tab-tests" class="tab">
+    <div class="panel">
+      <h3>🧪 Test schedule — MoRTH Section 900 (minimum frequency)</h3>
+      <p class="muted">Register ki matra (MT, sq.m, truck, din) aur bitumen ke tanker se nikalta hai ki har test kam se kam kitni baar lagna chahiye. "Ho gaye" mein lab register se ginti bharo — jo kam hai wo laal dikhega. App sirf ginti batata hai, test ke result nahi banata.<br>
+      ⚠ Frequency MoRTH 5th revision (Table 900-3/900-4) ke hisaab se bhari hai — apne tender / QAP se ek baar milao; farak ho to neeche "Test list" mein badal do.</p>
+      <div class="row no-print"><button class="btn" id="tsPrint">🖨 Print</button><button class="btn" id="tsXls">⬇ Excel</button>
+        <label style="flex-direction:row;align-items:center;gap:6px">Aggregate loose density (T/cum)<input id="tsAggDen" type="number" step="0.05" style="width:80px"></label></div>
+      <div id="tsSummary"></div>
+    </div>
+    <div class="panel"><h3>Din-wise test</h3><div id="tsDaily"></div></div>
+    <div class="panel">
+      <h3>Doosre material (jo register mein nahi) — matra haath se</h3>
+      <div class="tablewrap"><table class="grid"><thead><tr><th>Material</th><th>Matra (cum)</th><th>Area (sq.m)</th><th>Kaam ke din</th></tr></thead><tbody>
+        <tr><td>GSB</td><td><input type="number" data-tsman="GSB:cum"></td><td><input type="number" data-tsman="GSB:sqm"></td><td><input type="number" data-tsman="GSB:days"></td></tr>
+        <tr><td>WMM</td><td><input type="number" data-tsman="WMM:cum"></td><td><input type="number" data-tsman="WMM:sqm"></td><td><input type="number" data-tsman="WMM:days"></td></tr>
+        <tr><td>Anya (is kaam ke test)</td><td><input type="number" data-tsman="OTHER:cum"></td><td><input type="number" data-tsman="OTHER:sqm"></td><td><input type="number" data-tsman="OTHER:days"></td></tr>
+      </tbody></table></div>
+    </div>
+    <div class="panel">
+      <h3>Test list / frequency (badal sakte ho)</h3>
+      <div class="grid4">
+        <label>Material<select id="tsNewGrp"><option value="OTHER">Anya (is kaam ke)</option><option value="BINDER">Bitumen</option><option value="TACK">Tack coat</option><option value="BM">BM / BSG</option><option value="DBM">DBM / SDBC / BC</option><option value="GSB">GSB</option><option value="WMM">WMM</option></select></label>
+        <label>Varg<select id="tsNewCat"><option value="oth">Anya</option><option value="agg">Aggregate</option><option value="bit">Bitumen</option><option value="mix">Extraction / Gradation</option></select></label>
+        <label>Test ka naam<input id="tsNewName"></label>
+        <label>IS / code<input id="tsNewRef"></label>
+        <label>Aadhar<select id="tsNewBasis"><option value="tonne">har N tonne mix</option><option value="cum">har N cum</option><option value="sqm">har N sq.m</option><option value="day">N test roz</option><option value="truck">har N-ve truck</option><option value="lot">har lot / tanker</option><option value="source">har source par ek baar</option><option value="regular">lagataar</option></select></label>
+        <label>N<input id="tsNewN" type="number"></label>
+        <label>Min roz<input id="tsNewMin" type="number"></label>
+        <div class="end"><button class="btn primary" id="tsAdd">+ Test add</button></div>
+      </div>
+      <div class="tablewrap"><table class="grid" id="tsDefs"></table></div>
+      <div class="row"><button class="btn danger" id="tsReset">↺ MoRTH default par wapas</button></div>
+    </div>
+  </section>
+
   <!-- SETTINGS -->
   <section id="tab-settings" class="tab">
     <div class="panel">
@@ -322,5 +359,6 @@
 <script src="app.js"></script>
 <script src="progress.js"></script>
 <script src="paver.js"></script>
+<script src="tests.js"></script>
 </body>
 </html>

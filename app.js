@@ -1414,6 +1414,7 @@ function renderAll() {
   if (active === 'tab-settings') renderSettings();
   if (active === 'tab-progress' && typeof renderProgress === 'function') renderProgress();
   if (active === 'tab-paver' && typeof renderPaver === 'function') renderPaver();
+  if (active === 'tab-tests' && typeof renderTests === 'function') renderTests();
 }
 load();
 renderWorkSelect();
