@@ -182,7 +182,7 @@ function renderPaver2() {
 }
 $('#pv2Gate').addEventListener('click', e => {
   if (e.target.id === 'pv2GoPg') return showTab('progress');
-  if (e.target.id === 'pv2Ok') { const v = $('#pv2UptoIn').value; if (!v) return toast('Date chuno'); if (lockDate('paver') && v < lockDate('paver')) return toast(`🔒 ${dmy(lockDate('paver'))} tak lock hai — isse pehle ki date nahi`); DB.pv2upto = v; save(); return renderPaver(); }
+  if (e.target.id === 'pv2Ok') { const v = $('#pv2UptoIn').value; if (!v) return toast('Date chuno'); if (DB.pvLock && v < DB.pvLock.upto) return toast(`🔒 Chainage ${dmy(DB.pvLock.upto)} tak lock hai — isse pehle ki date nahi`); DB.pv2upto = v; save(); return renderPaver(); }
   if (e.target.id === 'pv2Reset') { DB.pv2upto = ''; save(); renderPaver(); }
 });
 $('#pv2Table').addEventListener('change', e => {

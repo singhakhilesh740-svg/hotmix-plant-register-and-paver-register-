@@ -363,7 +363,7 @@ function bookLeaf(i) { const s = DB.settings; return i === 0 ? (+s.gpLeaf || 1) 
 // Book no. nahi bhara ho to pucho
 function ensureGpBook() {
   if (+DB.settings.gpBook) return true;
-  const v = prompt('Pehli gate pass book ka no. kya hai? (jaise 2105)\nGate pass 2105/1, 2105/2 … 2105/50, phir 2106/1 … aise chalenge.');
+  const v = prompt('Pehli gate pass book ka no. kya hai?\nGate pass 2105/1, 2105/2 … 2105/50, phir 2106/1 … aise chalenge.', '2105');
   const m = String(v || '').trim().match(/^(\d+)(?:\s*\/\s*(\d+))?$/);
   if (!m) { toast('Gate pass book no. zaroori hai — Settings mein bharo'); return false; }
   DB.settings.gpBook = +m[1]; if (m[2]) DB.settings.gpLeaf = +m[2];
@@ -374,7 +374,7 @@ function ensureGpBook() {
 function gpNeedsFix() {
   if (!+DB.settings.gpBook) return false;
   const per = +DB.settings.gpPerBook || 50;
-  return DB.runs.some(r => !isLocked('plant', r.date) && r.trucks.some(t => { const p = parseGP(t.gp); return !p || p.num != null || p.leaf > per; }));
+  return DB.runs.some(r => r.trucks.some(t => { const p = parseGP(t.gp); return !p || p.num != null || p.leaf > per; }));
 }
 // Gate pass books ka kram: pehli book Settings se, aage +1; kisi book ka no. alag ho to gpBooks[index] mein
 function bookSeq(n) {
@@ -386,7 +386,6 @@ function nextBook(book) { const seq = bookSeq(400), i = seq.indexOf(book); retur
 function renumberAllGP() {   // saare (bina lock wale) register ke gate pass dobara
   let gp = firstGP();
   [...DB.runs].sort((a, b) => runKey(a).localeCompare(runKey(b))).forEach(r => {
-    if (isLocked('plant', r.date)) { if (r.trucks.length && parseGP(r.trucks[r.trucks.length - 1].gp)?.book != null) gp = nextGP(r.trucks[r.trucks.length - 1].gp); return; }   // lock wale din nahi badlenge
     gp = numberFrom(r.trucks, 0, gp);
   });
 }
@@ -400,7 +399,7 @@ function numberFrom(trucks, from, gp) { for (let i = from; i < trucks.length; i+
 // is run ke baad wale saved runs ka numbering aage badhao
 function cascadeGP(run) {
   let gp = nextGP(run.trucks[run.trucks.length - 1]?.gp);
-  DB.runs.filter(r => r.id !== run.id && runKey(r) > runKey(run) && !isLocked('plant', r.date)).sort((a, b) => runKey(a).localeCompare(runKey(b)))
+  DB.runs.filter(r => r.id !== run.id && runKey(r) > runKey(run)).sort((a, b) => runKey(a).localeCompare(runKey(b)))
     .forEach(r => { gp = numberFrom(r.trucks, 0, gp); });
 }
 function lastVehicleUsed() {
@@ -1034,10 +1033,17 @@ $('#gpBooksBox').addEventListener('change', e => {
   const auto = +i === 0 ? +DB.settings.gpBook : bookSeq(+i)[+i - 1] + 1;   // jo apne aap aata
   if (v === auto) delete DB.settings.gpBooks[i]; else DB.settings.gpBooks[i] = v;
   if (+i === 0) { DB.settings.gpBook = v; delete DB.settings.gpBooks[0]; }
-  if (DB.runs.length && confirm(`Book ${+i + 1} ab ${v}/${lf} se shuru. Saare saved register ke gate pass no. is hisaab se dobara lagayein?\n(Lock wale din nahi badlenge)`)) renumberAllGP();
+  if (DB.runs.length && confirm(`Book ${+i + 1} ab ${v}/${lf} se shuru. Saare saved register ke gate pass no. is hisaab se dobara lagayein?\n(Lock wale din mein bhi)`)) renumberAllGP();
   save(); renderSettings(); toast('Gate pass book update hui');
 });
+function renderChLock() {
+  const el = $('#chLockBox'); if (!el) return; const L = DB.pvLock;
+  el.innerHTML = L && L.upto
+    ? `<b>🔒 Chainage ${dmy(L.upto)} tak lock hai</b> — us date tak ke trucks ki chainage Progress badalne par bhi nahi badlegi. <button class="btn sm" id="chUnlock">🔓 Unlock</button>`
+    : `<label style="flex-direction:row;align-items:center;gap:8px">Chainage lock — kis date tak <input type="date" id="chLockDate" value="${DB.pv2upto || ''}"></label> <button class="btn sm primary" id="chLock">🔒 Chainage lock</button>`;
+}
 function renderStaff() {
+  renderChLock();
   const L = [...(DB.staff || [])].sort((a, b) => (a.role + (a.from || '')).localeCompare(b.role + (b.from || '')));
   $('#staffTable').innerHTML = `<thead><tr><th>Site</th><th>Naam</th><th>Hodda</th><th>Kab se</th><th>Kab tak</th><th>Lock</th><th></th></tr></thead><tbody>` +
     (L.map(x => `<tr><td>${ROLE[x.role]}</td><td class="l"><b>${esc(x.name)}</b></td><td>${esc(x.desig || '')}</td><td>${x.from ? dmy(x.from) : '—'}</td>
@@ -1061,24 +1067,14 @@ $('#staffTable').addEventListener('click', e => {
   if (d.slock) {
     const x = DB.staff.find(v => v.id === d.slock);
     if (!x.to) return toast('Pehle "Kab tak" date daalo');
-    if (!confirm(`${x.name} (${ROLE[x.role]}) ka ${dmy(x.to)} tak ka register lock karein?\nIske baad us date tak ki entry edit / delete / dobara generate nahi hogi.`)) return;
-    if (x.role === 'paver') {
-      if (typeof pv2Build !== 'function') return toast('Paver module load nahi hua');
-      if (!DB.pv2upto || DB.pv2upto < x.to) { if (!confirm(`Paver register mein Progress ${DB.pv2upto ? dmy(DB.pv2upto) : '—'} tak hi confirm hai. Kya Progress ${dmy(x.to)} tak poora hai? OK = haan, lock karo`)) return; DB.pv2upto = x.to; }
-      x.locked = true;
-      // jo chainage abhi register mein dikh rahi hai wahi hamesha ke liye fix (sirf lock date tak ke trucks)
-      const b = pv2Build(DB.pv2upto > x.to ? DB.pv2upto : x.to), keep = k => (DB.runs.find(r => r.id === k.split(':')[0])?.date || '9') <= x.to;
-      const pickK = o => Object.fromEntries(Object.entries(o).filter(([k]) => keep(k)));
-      DB.pvLock = { upto: x.to, alloc: pickK(b.alloc), lens: pickK(b.lens), pieces: pickK(b.pieces) };
-    } else x.locked = true;
-    save(); renderStaff(); return toast('🔒 Lock ho gaya');
+    if (!confirm(`${x.name} (${ROLE[x.role]}) ka ${dmy(x.to)} tak ka register lock karein?\nIske baad us date tak ki entry edit / delete / dobara generate nahi hogi (Unlock se kabhi bhi khol sakte ho).`)) return;
+    x.locked = true;
+    save(); renderAll(); return toast('🔒 Lock ho gaya');
   }
   if (d.sunlock) {
     const x = DB.staff.find(v => v.id === d.sunlock);
-    if (prompt(`${x.name} ka lock kholne ke liye UNLOCK likho:`) !== 'UNLOCK') return;
-    x.locked = false;
-    if (x.role === 'paver') { const l = lockDate('paver'); if (!l) DB.pvLock = null; else if (DB.pvLock) DB.pvLock.upto = l; }
-    save(); renderStaff(); return;
+    if (!confirm(`${x.name} (${ROLE[x.role]}) ka lock kholein? Us date tak ki entry phir se edit ho sakegi.`)) return;
+    x.locked = false; save(); renderAll(); return toast('🔓 Unlock ho gaya');
   }
   if (d.sdel) { const x = DB.staff.find(v => v.id === d.sdel); if (x.locked) return toast('Pehle unlock karo'); if (!confirm('Staff entry delete karein?')) return; DB.staff = DB.staff.filter(v => v.id !== d.sdel); save(); renderStaff(); }
 });
@@ -1429,6 +1425,22 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.se
 $('#btnGpRenum').addEventListener('click', () => {
   if (!ensureGpBook()) return;
   if (!DB.runs.length) return toast('Abhi koi register saved nahi');
-  if (!confirm(`Saare saved register ke gate pass ${firstGP()} se dobara lagenge (lock wale din nahi badlenge). Theek hai?`)) return;
+  if (!confirm(`Saare saved register ke gate pass ${firstGP()} se dobara lagenge (lock wale din mein bhi). Theek hai?`)) return;
   renumberAllGP(); save(); renderAll(); toast('Gate pass no. dobara lag gaye');
+});
+
+$('#chLockBox').addEventListener('click', e => {
+  if (e.target.id === 'chUnlock') {
+    if (!confirm('Chainage ka lock kholein? Phir chainage Progress ke hisaab se dobara ban jayegi.')) return;
+    DB.pvLock = null; save(); renderAll(); return toast('🔓 Chainage unlock');
+  }
+  if (e.target.id !== 'chLock') return;
+  const to = $('#chLockDate').value; if (!to) return toast('Date chuno');
+  if (typeof pv2Build !== 'function') return toast('Paver module load nahi hua');
+  if (!DB.pv2upto || DB.pv2upto < to) { if (!confirm(`Progress ${DB.pv2upto ? dmy(DB.pv2upto) : '—'} tak hi confirm hai. Kya Progress ${dmy(to)} tak poora bhara hai? OK = haan, lock karo`)) return; DB.pv2upto = to; }
+  // jo chainage abhi register mein dikh rahi hai wahi fix (sirf lock date tak ke trucks)
+  const b = pv2Build(DB.pv2upto), keep = k => (DB.runs.find(r => r.id === k.split(':')[0])?.date || '9') <= to;
+  const pickK = o => Object.fromEntries(Object.entries(o).filter(([k]) => keep(k)));
+  DB.pvLock = { upto: to, alloc: pickK(b.alloc), lens: pickK(b.lens), pieces: pickK(b.pieces) };
+  save(); renderAll(); toast('🔒 Chainage lock ho gayi');
 });
