@@ -1416,6 +1416,7 @@ function renderAll() {
   if (active === 'tab-paver' && typeof renderPaver === 'function') renderPaver();
   if (active === 'tab-tests' && typeof renderTests === 'function') renderTests();
   if (active === 'tab-grad' && typeof renderGrad === 'function') renderGrad();
+  if (active === 'tab-daily' && typeof renderDaily === 'function') renderDaily();
 }
 load();
 renderWorkSelect();

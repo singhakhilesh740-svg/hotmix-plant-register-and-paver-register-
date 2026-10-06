@@ -14,7 +14,7 @@
 </head>
 <body>
 <header class="topbar no-print">
-  <div class="brand"><img src="icon.svg" alt=""><div><b>Hot Mix Plant Register</b><small>v10 · 05-10-2026</small></div>
+  <div class="brand"><img src="icon.svg" alt=""><div><b>Hot Mix Plant Register</b><small>v12 · 06-10-2026</small></div>
     <select id="workSel" class="worksel" title="Kaam (work) chuno"></select></div>
 </header>
 
@@ -22,6 +22,7 @@
   <button data-tab="home" class="active">🏠 Home</button>
   <button data-tab="chat">🤖 Chat</button>
   <button data-tab="plant">🏭 Plant Register</button>
+  <button data-tab="daily">📈 Daily Tonnage</button>
   <button data-tab="bitumen">🛢️ Bitumen</button>
   <button data-tab="paver">🛣️ Paver Register</button>
   <button data-tab="progress">📊 Progress</button>
@@ -235,6 +236,24 @@
     </div>
   </section>
 
+  <!-- DAILY TONNAGE -->
+  <section id="tab-daily" class="tab">
+    <div class="panel">
+      <h3>📈 Daily actual tonnage</h3>
+      <p class="muted">"Actual" khane mein har din ka asli tonnage bharo (mix-wise). SCADA aur register ka aankda saath mein tulna ke liye dikhta hai.</p>
+      <div class="row no-print"><label style="flex-direction:row;align-items:center;gap:6px">Kab se <input type="date" id="dtFrom"></label><label style="flex-direction:row;align-items:center;gap:6px">Kab tak <input type="date" id="dtTo"></label>
+        <button class="btn sm" id="dtClear">Sab din</button><button class="btn" id="dtPrint">🖨 Print</button><button class="btn" id="dtXls">⬇ Excel</button></div>
+      <div id="dtBox"></div>
+    </div>
+    <div class="panel no-print">
+      <h3>Naya din jodo</h3>
+      <div class="row"><input type="date" id="dtNewDate"><select id="dtNewMix"></select><input type="number" step="any" id="dtNewVal" placeholder="MT" style="width:110px"><button class="btn primary" id="dtAdd">+ Add</button></div>
+      <p class="muted" id="dtPasteHint"></p>
+      <textarea id="dtPaste" rows="4" placeholder="24-09-2026	416&#10;25-09-2026	599.57"></textarea>
+      <div class="row"><button class="btn" id="dtPasteBtn">Paste wala data jodo</button></div>
+    </div>
+  </section>
+
   <!-- GRADATION -->
   <section id="tab-grad" class="tab">
     <div class="panel no-print">
@@ -381,5 +400,6 @@
 <script src="paver.js"></script>
 <script src="tests.js"></script>
 <script src="grad.js"></script>
+<script src="daily.js"></script>
 </body>
 </html>
