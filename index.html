@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hot Mix Plant Register</title>
+<title>RnB Office</title>
 <meta name="theme-color" content="#1f4e79">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -14,7 +14,8 @@
 </head>
 <body>
 <header class="topbar no-print">
-  <div class="brand"><img src="icon.svg" alt=""><div><b>Hot Mix Plant Register</b><small>v12 · 06-10-2026</small></div>
+  <div class="brand"><img src="icon.svg" alt=""><div><b>RnB Office</b><small>v13 · 06-10-2026</small></div>
+    <nav class="secnav" id="secNav"><button data-sec="letter">✉️ Letter</button><button data-sec="road" class="active">🛣️ Road Register</button></nav>
     <select id="workSel" class="worksel" title="Kaam (work) chuno"></select></div>
 </header>
 
@@ -33,6 +34,43 @@
 </nav>
 
 <main class="no-print">
+  <!-- ============ LETTER SECTION ============ -->
+  <div id="secLetter">
+    <div class="lt-cols">
+      <div>
+        <div class="panel">
+          <h3>🤖 Letter chatbot</h3>
+          <div class="chatlog" id="ltChatLog" style="max-height:230px;padding:6px 0"></div>
+          <textarea id="ltMsg" rows="2" placeholder="Vishay / kya likhna hai… (Ctrl+Enter se bhejo)"></textarea>
+          <div class="row"><label class="btn sm" style="cursor:pointer">📎 File<input type="file" id="ltFile" accept="image/*,.pdf,.xlsx,.xls,.csv,.txt" hidden></label><span class="muted" id="ltFileName"></span>
+            <button class="btn primary" id="ltSend" style="margin-left:auto">Bhejo</button><button class="btn sm" id="ltChatClear">Chat saaf</button></div>
+        </div>
+        <div class="panel" id="ltForm">
+          <h3>Patra ki details</h3>
+          <div class="grid4"><label>Format<select id="ltFmt"></select></label><label>Javak no.<input data-lt="no"></label><label>Tarikh<input type="date" data-lt="date"></label></div>
+          <label>Prati / To (har line alag)<textarea data-lt="to" rows="3"></textarea></label>
+          <label>Vishay / Subject<textarea data-lt="subject" rows="2"></textarea></label>
+          <label>Sandarbh / Reference (na ho to khali)<textarea data-lt="ref" rows="1"></textarea></label>
+          <label>Matter (para ke beech khali line)<textarea data-lt="body" rows="7"></textarea></label>
+          <div class="tablewrap"><table class="grid"><thead><tr><th>Sr</th><th>Kaam ka naam</th><th>Andajit rakam (Rs.)</th><th></th></tr></thead><tbody id="ltWorks"></tbody></table></div>
+          <div class="row"><button class="btn sm" id="ltAddWork">+ Kaam (table)</button></div>
+          <label>Table ke baad / aakhri vinanti<textarea data-lt="closing" rows="3"></textarea></label>
+          <label>Bidan / Encl.<input data-lt="encl"></label>
+          <label>Nakal ravana / Copy to (har line ek)<textarea data-lt="copy" rows="2"></textarea></label>
+          <div class="row"><button class="btn" id="ltNew">🆕 Naya</button><button class="btn success" id="ltSaveBtn">💾 Save</button><button class="btn" id="ltPrint">🖨 Print</button><button class="btn primary" id="ltDocx">⬇ Word (.docx)</button></div>
+        </div>
+        <div class="panel"><h3>Saved patra</h3><div class="tablewrap"><table class="grid"><thead><tr><th>Tarikh</th><th>No.</th><th>Vishay</th><th>Bhasha</th><th></th></tr></thead><tbody id="ltSaved"></tbody></table></div></div>
+        <details class="panel"><summary style="cursor:pointer;font-weight:600">Letterhead aur sahi (office details)</summary>
+          <label>English letterhead (har line alag)<textarea data-lto="en" rows="6"></textarea></label>
+          <label>ગુજરાતી letterhead<textarea data-lto="gu" rows="5"></textarea></label>
+          <div class="grid4"><label>Sahi — English<textarea data-lto="signEn" rows="3"></textarea></label><label>સહી — ગુજરાતી<textarea data-lto="signGu" rows="3"></textarea></label></div>
+          <div class="row"><button class="btn sm danger" id="ltOfficeReset">↺ Default</button></div>
+        </details>
+      </div>
+      <div class="lt-prevwrap"><div id="ltPreview"></div></div>
+    </div>
+  </div>
+
   <!-- HOME -->
   <section id="tab-home" class="tab active">
     <div class="cards" id="homeCards"></div>
@@ -401,5 +439,6 @@
 <script src="tests.js"></script>
 <script src="grad.js"></script>
 <script src="daily.js"></script>
+<script src="letter.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const C='hmp-v12';const A=['./','index.html','style.css','app.js','progress.js','paver.js','tests.js','grad.js','daily.js','manifest.json','icon.svg'];
+const C='hmp-v13';const A=['./','index.html','style.css','app.js','progress.js','paver.js','tests.js','grad.js','daily.js','letter.js','manifest.json','icon.svg'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(A)));self.skipWaiting();});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))));self.clients.claim();});
 self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||!e.request.url.startsWith(self.location.origin))return;
