@@ -1,7 +1,7 @@
 /* ================= Google login + cloud data + admin panel =================
    firebase-config.js mein config ho to login zaroori; har user ka data alag (Firestore: users/{uid}/...).
    Kaun sa section kise dikhe — admin (ADMIN_EMAIL) tay karta hai; naye user ko default sirf Road Register. */
-const ADMIN_EMAIL = 'singhakhilesh740@gmail.com';
+const ADMIN_EMAIL = '112ce0489@gmail.com';
 const SECTIONS = [
   { id: 'road', label: '🛣️ Road Register', def: true },
   { id: 'letter', label: '✉️ Letter', def: false },

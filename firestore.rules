@@ -3,7 +3,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'singhakhilesh740@gmail.com'
+      return request.auth != null && request.auth.token.email == '112ce0489@gmail.com'
              && request.auth.token.email_verified == true;
     }
     // har user ka profile (admin list dekh sakta hai) + uska apna data (sirf wahi user)
