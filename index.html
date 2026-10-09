@@ -14,9 +14,9 @@
 </head>
 <body>
 <header class="topbar no-print">
-  <div class="brand"><img src="icon.svg" alt=""><div><b>RnB Office</b><small>v13 · 06-10-2026</small></div>
-    <nav class="secnav" id="secNav"><button data-sec="letter">✉️ Letter</button><button data-sec="road" class="active">🛣️ Road Register</button></nav>
-    <select id="workSel" class="worksel" title="Kaam (work) chuno"></select></div>
+  <div class="brand"><img src="icon.svg" alt=""><div><b>RnB Office</b><small>v14 · 09-10-2026</small></div>
+    <nav class="secnav" id="secNav"></nav>
+    <select id="workSel" class="worksel" title="Kaam (work) chuno"></select><div class="userbox" id="userBox"></div></div>
 </header>
 
 <nav class="tabs no-print" id="tabs">
@@ -33,7 +33,12 @@
   <button data-tab="settings">⚙️ Settings</button>
 </nav>
 
+<div id="loginScreen" class="no-print"><div class="login-card"><img src="icon.svg" alt="" style="width:64px;height:64px;border-radius:14px;background:#fff"><h2>RnB Office</h2>
+  <p class="muted">Roads &amp; Buildings — register aur patra</p><button class="btn primary" id="btnLogin" style="font-size:16px;padding:10px 20px">🔐 Google se login karo</button><p class="muted" id="loginMsg"></p></div></div>
 <main class="no-print">
+  <!-- ============ ADMIN ============ -->
+  <div id="secAdmin"><div class="panel"><h3>🛡️ Admin panel — kaun sa section kise dikhe</h3><div class="row"><button class="btn sm" id="admRefresh">↻ Refresh</button></div><div id="admBox"></div></div></div>
+
   <!-- ============ LETTER SECTION ============ -->
   <div id="secLetter">
     <div class="lt-cols">
@@ -440,5 +445,7 @@
 <script src="grad.js"></script>
 <script src="daily.js"></script>
 <script src="letter.js"></script>
+<script src="firebase-config.js"></script>
+<script src="auth.js"></script>
 </body>
 </html>

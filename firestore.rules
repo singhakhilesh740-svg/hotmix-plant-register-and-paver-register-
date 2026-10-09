@@ -1,0 +1,23 @@
+rules_version = '2';
+// RnB Office — Firebase console → Firestore Database → Rules mein ye poora paste karke Publish karo
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'singhakhilesh740@gmail.com'
+             && request.auth.token.email_verified == true;
+    }
+    // har user ka profile (admin list dekh sakta hai) + uska apna data (sirf wahi user)
+    match /users/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow write: if request.auth != null && request.auth.uid == uid;
+      match /{rest=**} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+    // kaun sa section kise dikhega — sirf admin badal sakta hai
+    match /access/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+  }
+}

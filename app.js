@@ -3,7 +3,7 @@
 'use strict';
 
 // ---------------- storage ----------------
-const KEY = 'hmp_register_v1';
+let KEY = 'hmp_register_v1';
 const AIKEY = 'hmp_ai_v1';
 const DEF = () => ({
   settings: { workName: '', agency: '', plant: '', division: '', gpStart: 1, gpBook: '', gpLeaf: 1, gpPerBook: 50, tempMin: 140, tempMax: 165, diffMin: 0.7, diffMax: 1.1, mixCorr: 0, tankCorr: 0, travelMin: 30, paverMinT: 130 },
@@ -26,9 +26,9 @@ const DEF = () => ({
 // STORE = { works: {id: workData}, current: id }  — har kaam ka alag data
 let STORE, DB;
 function fixWork(d) { const w = Object.assign(DEF(), d || {}); w.settings = Object.assign(DEF().settings, (d && d.settings) || {}); return w; }
-function load() {
-  let d = {};
-  try { d = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
+function load(raw) {
+  let d = raw || {};
+  if (raw === undefined) try { d = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
   if (d.works) STORE = d;
   else if (d.runs || d.settings) { const id = uid(); STORE = { works: { [id]: d }, current: id }; }   // purana data -> pehla work
   else STORE = { works: {}, current: null };
@@ -44,6 +44,7 @@ function load() {
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(STORE)); }
   catch (e) { toast('Save nahi hua: ' + e.message); }
+  if (typeof cloudSave === 'function') cloudSave();
 }
 function switchWork(id) {
   if (!STORE.works[id]) return;
@@ -1447,3 +1448,6 @@ $('#chLockBox').addEventListener('click', e => {
   DB.pvLock = { upto: to, alloc: pickK(b.alloc), lens: pickK(b.lens), pieces: pickK(b.pieces) };
   save(); renderAll(); toast('🔒 Chainage lock ho gayi');
 });
+
+// number box par mouse scroll se value na badle
+document.addEventListener('wheel', e => { const a = document.activeElement; if (a && a.type === 'number' && e.target === a) a.blur(); }, { passive: true });

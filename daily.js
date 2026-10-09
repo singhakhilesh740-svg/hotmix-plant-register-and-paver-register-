@@ -25,16 +25,21 @@ function renderDaily() {
   if (!R.length) { el.innerHTML = '<p class="muted">Abhi koi data nahi. Neeche se tarikh jodo ya Excel se paste karo.</p>'; return; }
   const sum = f => R.reduce((a, d) => a + f(d), 0), tA = sum(d => d.tA), tS = sum(d => d.tS), tR = sum(d => d.tR), nA = R.filter(d => d.hasA).length;
   el.innerHTML = `<div class="sum"><span>Din: <b>${R.length}</b></span><span>Actual: <b>${f2(tA)} MT</b></span><span>SCADA: <b>${f2(tS)} MT</b></span><span>Register: <b>${f2(tR)} MT</b></span><span>Roz ka ausat (actual): <b>${nA ? f2(tA / nA) : '—'} MT</b></span></div>
-    <div class="tablewrap"><table class="grid"><thead><tr><th rowspan="2">Tarikh</th>${M.map(k => `<th colspan="3">${esc(k)}</th>`).join('')}<th colspan="3">Kul</th><th rowspan="2">Actual − SCADA</th><th rowspan="2">Actual jod (MT)</th></tr>
-    <tr>${[...M, 0].map(() => '<th>Actual</th><th>SCADA</th><th>Register</th>').join('')}</tr></thead><tbody>` +
-    R.map(d => `<tr><td>${dmy(d.date)}</td>${M.map(k => `<td><input type="number" step="any" data-dta="${d.date}|${esc(k)}" value="${d.act[k] ?? ''}" style="width:84px;font-weight:600"></td><td>${d.sc[k] != null ? f2(d.sc[k]) : '—'}</td><td>${d.rg[k] != null ? f2(d.rg[k]) : '—'}</td>`).join('')}
-      <td><b>${d.hasA ? f2(d.tA) : '—'}</b></td><td>${d.tS ? f2(d.tS) : '—'}</td><td>${d.tR ? f2(d.tR) : '—'}</td><td>${d.hasA && d.tS ? f2(d.tA - d.tS) : ''}</td><td>${f2(d.cum)}</td></tr>`).join('') +
-    `<tr>${['Kul', ...M.flatMap(k => [f2(sum(d => d.act[k] || 0)), f2(sum(d => d.sc[k] || 0)), f2(sum(d => d.rg[k] || 0))]), f2(tA), f2(tS), f2(tR), '', ''].map(v => `<th>${v}</th>`).join('')}</tr></tbody></table></div>`;
+    <div class="dt-legend"><span class="dt-act">✍️ Actual (tum bharte ho)</span><span class="dt-sc">SCADA (plant ka)</span><span class="dt-rg">Register</span></div>
+    <div class="tablewrap dt-wrap"><table class="grid dt-tbl"><thead><tr><th rowspan="2" class="dt-c0">Tarikh</th>${M.map(k => `<th colspan="3" class="dt-mix">${esc(k)}</th>`).join('')}<th colspan="3" class="dt-mix">Kul</th><th rowspan="2">Actual − SCADA</th><th rowspan="2">Actual jod (MT)</th></tr>
+    <tr>${[...M, 0].map(() => '<th class="dt-act">✍️ Actual</th><th class="dt-sc">SCADA</th><th class="dt-rg">Register</th>').join('')}</tr></thead><tbody>` +
+    R.map(d => `<tr><td class="dt-c0">${dmy(d.date)}</td>${M.map(k => `<td class="dt-act"><input type="text" inputmode="decimal" autocomplete="off" data-dta="${d.date}|${esc(k)}" value="${d.act[k] ?? ''}"></td><td class="dt-sc">${d.sc[k] != null ? f2(d.sc[k]) : '—'}</td><td class="dt-rg">${d.rg[k] != null ? f2(d.rg[k]) : '—'}</td>`).join('')}
+      <td class="dt-act"><b>${d.hasA ? f2(d.tA) : '—'}</b></td><td class="dt-sc">${d.tS ? f2(d.tS) : '—'}</td><td class="dt-rg">${d.tR ? f2(d.tR) : '—'}</td><td>${d.hasA && d.tS ? f2(d.tA - d.tS) : ''}</td><td>${f2(d.cum)}</td></tr>`).join('') +
+    `<tr class="dt-tot">${['Kul', ...M.flatMap(k => [f2(sum(d => d.act[k] || 0)), f2(sum(d => d.sc[k] || 0)), f2(sum(d => d.rg[k] || 0))]), f2(tA), f2(tS), f2(tR), '', ''].map((v, i) => `<th class="${i === 0 ? 'dt-c0' : ['dt-rg', 'dt-act', 'dt-sc'][i % 3] || ''}">${v}</th>`).join('')}</tr></tbody></table></div>`;
+  // doosri heading line pehli ke theek neeche chipke
+  const h1 = el.querySelector('.dt-tbl thead tr')?.getBoundingClientRect().height || 30; el.querySelector('.dt-tbl').style.setProperty('--h1', h1 + 'px');
 }
 function dtSet(date, mix, v) { const A = dtDB(); A[date] = A[date] || {}; if (v === '' || v == null) delete A[date][mix]; else A[date][mix] = +v || 0; if (!Object.keys(A[date]).length) delete A[date]; }
 document.addEventListener('change', e => {
   if (e.target.id === 'dtFrom' || e.target.id === 'dtTo') return renderDaily();
-  const k = e.target.dataset?.dta; if (!k) return; const [date, mix] = k.split('|'); dtSet(date, mix, e.target.value.trim()); save(); renderDaily();
+  const k = e.target.dataset?.dta; if (!k) return; const [date, mix] = k.split('|'), v = e.target.value.trim().replace(/,/g, '');
+  if (v !== '' && isNaN(+v)) { toast('Sirf number likho (jaise 471.21)'); return renderDaily(); }
+  const y = window.scrollY, sc = $('.dt-wrap')?.scrollTop || 0; dtSet(date, mix, v); save(); renderDaily(); window.scrollTo(0, y); const w = $('.dt-wrap'); if (w) w.scrollTop = sc;
 });
 document.addEventListener('click', e => {
   const id = e.target.id;

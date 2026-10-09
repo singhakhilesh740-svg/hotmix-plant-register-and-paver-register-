@@ -1,7 +1,7 @@
 /* ================= RnB Office — Letter section =================
    Format: R&B Sub Division Dahod ke English / Gujarati patra. Chatbot ko vishay (ya estimate / patra ki file) do,
    wo draft bharta hai; tum form mein sudhaar kar ke Print ya Word (.docx) nikalo. */
-const LKEY = 'rnb_letter_v1';
+let LKEY = 'rnb_letter_v1';
 const LT_OFFICE = () => ({
   en: 'GOVERNMENT OF GUJARAT\nROADS & BUILDINGS DEPARTMENT\nOffice of the Deputy Executive Engineer\nR & B Sub Division, Dahod\nGadi Fort, Dahod, Taluka: Dahod, District: Dahod\nPhone: 02673-220227, Email: rnbdahoddee@gmail.com',
   gu: 'નાયબ કાર્યપાલક ઇજનેરશ્રીની કચેરી\nમાર્ગ અને મકાન પેટા વિભાગ,દાહોદ (રાજ્ય)\nગડી ફોર્ટ દાહોદ,તા:દાહોદ , જી:દાહોદ\n(02673) 220227\nrnbdahoddee@gmail.com',
@@ -30,11 +30,12 @@ const LT_FMT = {
     closing: 'ઉપરોક્ત કામોના અંદાજપત્રક પરૂઝલ કરી ટેકનીકલ મંજૂરી, વહીવટી મંજૂરી તથા ગ્રાન્ટ ફાળવવા વિનંતી છે.\n\nઆથી ઉપરોક્ત બાબતે જરૂરી કાર્યવાહી કરવા વિનંતી છે. આ બાબતે આપશ્રીની જાણ તથા આગળની જરૂરી કાર્યવાહી માટે સાદર રજૂ.',
     encl: 'અંદાજપત્રક (____ નકલ)', works: [{ name: '', amt: '' }] } },
 };
-let LT = (() => { try { return JSON.parse(localStorage.getItem(LKEY) || '{}'); } catch (e) { return {}; } })();
-LT.office = { ...LT_OFFICE(), ...(LT.office || {}) }; LT.letters = LT.letters || []; LT.chat = LT.chat || [];
+let LT;
+function ltLoad(raw) { LT = raw || (() => { try { return JSON.parse(localStorage.getItem(LKEY) || '{}'); } catch (e) { return {}; } })();
+  LT.office = { ...LT_OFFICE(), ...(LT.office || {}) }; LT.letters = LT.letters || []; LT.chat = LT.chat || []; if (!LT.cur) LT.cur = ltBlank('en_general'); }
 const ltBlank = fmt => ({ id: uid(), fmt, no: '', date: '', to: '', subject: '', ref: '', body: '', closing: '', encl: '', copy: '', works: [], ...JSON.parse(JSON.stringify(LT_FMT[fmt].d)) });
-if (!LT.cur) LT.cur = ltBlank('en_general');
-function ltSave() { try { localStorage.setItem(LKEY, JSON.stringify(LT)); } catch (e) { toast('Save nahi hua: ' + e.message); } }
+ltLoad();
+function ltSave() { try { localStorage.setItem(LKEY, JSON.stringify(LT)); } catch (e) { toast('Save nahi hua: ' + e.message); } if (typeof cloudSaveLetters === 'function') cloudSaveLetters(); }
 const ltLang = L => (LT_FMT[L.fmt] || LT_FMT.en_general).lang;
 const guNum = s => String(s).replace(/\d/g, d => '૦૧૨૩૪૫૬૭૮૯'[d]);
 const inr = v => { const n = +String(v).replace(/[^\d.]/g, ''); return v === '' || v == null || isNaN(n) ? String(v || '') : n.toLocaleString('en-IN', { maximumFractionDigits: 2 }); };
@@ -116,8 +117,8 @@ document.addEventListener('click', e => {
   if (id === 'ltOfficeReset') { if (!confirm('Letterhead wapas default par?')) return; LT.office = LT_OFFICE(); ltSave(); return renderLetter(); }
 });
 document.addEventListener('keydown', e => { if (e.target.id === 'ltMsg' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) ltChatSend(); });
-function setSection(s) { document.body.dataset.sec = s; try { localStorage.setItem('rnb_sec', s); } catch (e) {}
-  $$('#secNav button').forEach(b => b.classList.toggle('active', b.dataset.sec === s)); if (s === 'letter') renderLetter(); else renderAll(); }
+function setSection(s) { const A = window.ALLOWED || ['road', 'letter']; if (!A.includes(s)) s = A[0] || 'road'; document.body.dataset.sec = s; try { localStorage.setItem('rnb_sec', s); } catch (e) {}
+  $$('#secNav button').forEach(b => b.classList.toggle('active', b.dataset.sec === s)); if (s === 'letter') renderLetter(); else if (s === 'admin') { if (typeof renderAdmin === 'function') renderAdmin(); } else renderAll(); }
 // ---------- chatbot ----------
 const LT_RULES = `You draft official letters for the Deputy Executive Engineer, R & B Sub Division, Dahod (Government of Gujarat, Roads & Buildings Department).
 House rules:
@@ -207,4 +208,4 @@ async function ltDocx(L) {
   const blob = await Packer.toBlob(doc), a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = ((L.subject || 'Letter').replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 60) || 'Letter') + '.docx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
-setSection((() => { try { return localStorage.getItem('rnb_sec') || 'road'; } catch (e) { return 'road'; } })());
+
