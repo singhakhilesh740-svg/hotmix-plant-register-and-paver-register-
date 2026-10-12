@@ -5,15 +5,22 @@ const GR_DEF = {
   BSG: { sv: '53:100-100, 26.5:75-100, 22.4:50-85, 13.2:20-40, 5.6:5-20, 2.8:0-5', pan: 1, ext: 0, mode: 'range', tol: 0.3, mat: '32-40 mm:75, 20 mm:15, 10 mm:10', title: 'SIEVE ANALYSIS / GRADATION TEST OF AGGREGATE FOR BUILT-UP SPRAY GROUT (BSG)' },
   BM: { sv: '26.5:100-100, 19:90-100, 13.2:56-88, 4.75:16-36, 2.36:4-19, 0.3:2-10, 0.075:0-8', pan: 0, ext: 1, mode: 'min', tol: 0.3, mat: '20 mm:35, 10 mm:40, 6 mm:15, Dust:10', title: 'GRADATION FOR BITUMINOUS MACADAM (BM)' },
   SDBC: { sv: '13.2:100-100, 9.5:90-100, 4.75:35-51, 2.36:24-39, 1.18:15-30, 0.3:9-19, 0.075:3-8', pan: 0, ext: 1, mode: 'range', tol: 0.3, mat: '10 mm:30, 6 mm:35, Stone Dust:35', title: 'GRADATION FOR SEMI DENSE BITUMINOUS CONCRETE (SDBC)' },
+  // MoRTH Table 500-17 (BC) aur 500-10 (DBM) — "-" = us sieve par limit nahi (wazan bhar sakte ho)
+  BC1: { sv: '26.5:100-100, 19:90-100, 13.2:59-79, 9.5:52-72, 4.75:35-55, 2.36:28-44, 1.18:20-34, 0.6:15-27, 0.3:10-20, 0.15:5-13, 0.075:2-8', pan: 1, ext: 1, mode: 'range', tol: 0.3, minBit: 5.2, mat: '', title: 'GRADATION FOR BITUMINOUS CONCRETE (BC) — GRADING 1 (19 mm nominal, 50 mm layer)' },
+  BC2: { sv: '19:100-100, 13.2:90-100, 9.5:70-88, 4.75:53-71, 2.36:42-58, 1.18:34-48, 0.6:26-38, 0.3:18-28, 0.15:12-20, 0.075:4-10', pan: 1, ext: 1, mode: 'range', tol: 0.3, minBit: 5.4, mat: '', title: 'GRADATION FOR BITUMINOUS CONCRETE (BC) — GRADING 2 (13.2 mm nominal, 30-40 mm layer)' },
+  DBM1: { sv: '45:100-100, 37.5:95-100, 26.5:63-93, 19:-, 13.2:55-75, 9.5:-, 4.75:38-54, 2.36:28-42, 1.18:-, 0.6:-, 0.3:7-21, 0.15:-, 0.075:2-8', pan: 1, ext: 1, mode: 'range', tol: 0.3, minBit: 4.0, mat: '', title: 'GRADATION FOR DENSE BITUMINOUS MACADAM (DBM) — GRADING 1 (37.5 mm nominal, 75-100 mm layer)' },
+  DBM2: { sv: '26.5:100-100, 19:90-100, 13.2:71-95, 9.5:56-80, 4.75:38-54, 2.36:28-42, 1.18:-, 0.6:-, 0.3:7-21, 0.15:-, 0.075:2-8', pan: 1, ext: 1, mode: 'range', tol: 0.3, minBit: 4.5, mat: '', title: 'GRADATION FOR DENSE BITUMINOUS MACADAM (DBM) — GRADING 2 (26.5 mm nominal, 50-75 mm layer)' },
   X: { sv: '', pan: 0, ext: 1, mode: 'range', tol: 0.3, mat: '', title: '' },
 };
 function grDB() { if (!DB.grad) DB.grad = { tpl: {}, days: {} }; DB.grad.tpl = DB.grad.tpl || {}; DB.grad.days = DB.grad.days || {}; return DB.grad; }
 function grTpl(it) {
   const g = grDB(); if (g.tpl[it.code]) return g.tpl[it.code];
-  const n = (it.name || '').toUpperCase(), k = /BSG|BUSG/.test(n) ? 'BSG' : /SDBC/.test(n) ? 'SDBC' : /BM/.test(n) && !/DBM/.test(n) ? 'BM' : 'X';
+  const n = (it.name || '').toUpperCase(), gr = +it.grading || 0, th = +itemParams(it).th;
+  const k = /BSG|BUSG/.test(n) ? 'BSG' : /SDBC/.test(n) ? 'SDBC' : /DBM/.test(n) ? ((gr || (th >= 75 ? 1 : 2)) === 1 ? 'DBM1' : 'DBM2') : /BC/.test(n) ? ((gr || (th >= 45 ? 1 : 2)) === 1 ? 'BC1' : 'BC2') : /BM/.test(n) ? 'BM' : 'X';
   return { ...GR_DEF[k], title: GR_DEF[k].title || `GRADATION FOR ${n}` };
 }
-function grSieves(t) { return String(t.sv || '').split(',').map(x => x.trim().match(/^([\d.]+)\s*:\s*([\d.]+)\s*-\s*([\d.]+)$/)).filter(Boolean).map(m => ({ s: +m[1], lo: +m[2], hi: +m[3] })); }
+function grSieves(t) { return String(t.sv || '').split(',').map(x => x.trim().match(/^([\d.]+)\s*:\s*(?:([\d.]+)\s*-\s*([\d.]+)|-)$/)).filter(Boolean).map(m => ({ s: +m[1], lo: m[2] == null ? null : +m[2], hi: m[3] == null ? null : +m[3] })); }
+const grLim = r => r.lo == null ? '—' : `${r.lo} – ${r.hi}`;
 // din + item ke hisse (register se)
 function grParts() {
   const m = {};
@@ -30,15 +37,16 @@ function grCalc(t, s) {
   const any = w.some(v => v != null) || pan != null, tot = w.reduce((a, v) => a + (v || 0), 0) + (pan || 0);
   let cum = 0; const rows = sv.map((x, i) => { if (!tot) return { ...x, ret: null, cum: null, pass: null, ok: null };
     const ret = (w[i] || 0) / tot * 100; cum += ret; const pass = 100 - cum, r2 = Math.round(pass * 100) / 100;
-    return { ...x, ret, cum, pass, ok: r2 >= x.lo && r2 <= x.hi }; });
-  return { rows, tot, any, done: any && tot > 0, ok: tot > 0 && rows.every(r => r.ok) };
+    return { ...x, ret, cum, pass, ok: x.lo == null ? null : r2 >= x.lo && r2 <= x.hi }; });
+  return { rows, tot, any, done: any && tot > 0, ok: tot > 0 && rows.every(r => r.ok !== false) };
 }
 function grExt(t, it, x) {
   const W1 = grNum(x.W1), W2 = grNum(x.W2), W3 = grNum(x.W3), W4 = grNum(x.W4), spec = +it.pct || 0, tol = +t.tol || 0;
   const W5 = W2 != null && W3 != null ? W3 - W2 : null, W6 = W4 != null && W5 != null ? W4 + W5 : null, W7 = W1 != null && W6 != null ? W1 - W6 : null;
   const bc = W7 != null && W1 > 0 ? W7 / W1 * 100 : null, b2 = bc == null ? null : Math.round(bc * 100) / 100;
-  const ok = b2 == null ? null : t.mode === 'min' ? b2 >= spec - tol - 1e-9 : (b2 >= spec - tol - 1e-9 && b2 <= spec + tol + 1e-9);
-  return { W5, W6, W7, bc, spec, tol, ok };
+  let ok = b2 == null ? null : t.mode === 'min' ? b2 >= spec - tol - 1e-9 : (b2 >= spec - tol - 1e-9 && b2 <= spec + tol + 1e-9);
+  const min = +t.minBit || 0; if (ok && min && b2 < min - 1e-9) ok = false;   // MoRTH minimum se kam = FAIL
+  return { W5, W6, W7, bc, spec, tol, min, ok };
 }
 function grStatus(p) {
   const t = grTpl(p.it), d = grDay(p); let done = 0, fail = 0, need = 0;
@@ -58,12 +66,12 @@ function renderGrad() {
     P.map(p => { const s = grStatus(p); return `<tr style="cursor:pointer;${p.date === GR_SEL ? 'background:var(--chip)' : ''}" data-grsel="${p.date}"><td data-grsel="${p.date}">${dmy(p.date)}</td><td data-grsel="${p.date}">${esc(p.it.name)}</td><td>${f2(p.T)}</td>
       <td>${s.done} / ${s.need}</td><td>${s.fail ? `<span class="flag">⚠ ${s.fail} FAIL</span>` : s.done === s.need ? '✅ PASS' : s.done ? 'adhura' : '<span class="muted">khali</span>'}</td></tr>`; }).join('') + '</tbody></table></div>';
   box.innerHTML = `<h3>${dmy(GR_SEL)} ki sheet</h3>` + P.filter(p => p.date === GR_SEL).map(grPartHtml).join('');
-  $('#grTpl').innerHTML = `<thead><tr><th>Item</th><th>Sieve (mm) : lower-upper % passing</th><th>Pan</th><th>Extraction</th><th>Bitumen pass</th><th>Tolerance ±</th><th>Material %</th></tr></thead><tbody>` +
+  $('#grTpl').innerHTML = `<thead><tr><th>Item</th><th>Sieve (mm) : lower-upper % passing</th><th>Pan</th><th>Extraction</th><th>Bitumen pass</th><th>Tolerance ±</th><th>MoRTH min bitumen %</th><th>Material %</th></tr></thead><tbody>` +
     DB.items.map(it => { const t = grTpl(it), a = `data-grt="${esc(it.code)}"`; return `<tr><td>${esc(it.name)}<br><span class="muted">${it.pct}%</span></td>
       <td><textarea ${a} data-f="sv" rows="2" style="width:420px">${esc(t.sv)}</textarea></td>
       <td><input type="checkbox" ${a} data-f="pan" ${t.pan ? 'checked' : ''} style="width:auto"></td><td><input type="checkbox" ${a} data-f="ext" ${t.ext ? 'checked' : ''} style="width:auto"></td>
       <td><select ${a} data-f="mode" style="width:150px"><option value="range" ${t.mode === 'range' ? 'selected' : ''}>spec ± tolerance</option><option value="min" ${t.mode === 'min' ? 'selected' : ''}>kam se kam (spec − tol)</option></select></td>
-      <td><input type="number" step="0.1" ${a} data-f="tol" value="${t.tol}" style="width:60px"></td><td><input ${a} data-f="mat" value="${esc(t.mat)}" style="width:240px"></td></tr>`; }).join('') + '</tbody>';
+      <td><input type="number" step="0.1" ${a} data-f="tol" value="${t.tol}" style="width:60px"></td><td><input type="number" step="0.1" ${a} data-f="minBit" value="${t.minBit || ''}" style="width:60px"></td><td><input ${a} data-f="mat" value="${esc(t.mat)}" style="width:240px"></td></tr>`; }).join('') + '</tbody>';
 }
 function grPartHtml(p) {
   const t = grTpl(p.it), d = grDay(p), sv = grSieves(t), ng = grN(p, d, 'g'), nx = grN(p, d, 'x');
@@ -74,7 +82,7 @@ function grPartHtml(p) {
   for (let n = 0; n < ng; n++) { const s = d.g[n] || {}, c = grCalc(t, s);
     h += `<div data-grb="${p.key}|g|${n}"><div style="font-weight:600;margin:6px 0 2px">Gradation – Sample ${n + 1} <span data-o="ov">${c.done ? PF(c.ok) : ''}</span></div>
       <table class="grid" style="width:auto"><thead><tr><th>IS Sieve (mm)</th><th>Wt. retained (g)</th><th>% Ret.</th><th>Cum. % Ret.</th><th>% Passing</th><th>Limit</th><th>Result</th></tr></thead><tbody>` +
-      c.rows.map((r, i) => `<tr><td>${r.s}</td><td><input type="number" step="any" data-grw="${i}" value="${(s.w || [])[i] ?? ''}" style="width:86px"></td><td data-o="r${i}">${g2(r.ret)}</td><td data-o="c${i}">${g2(r.cum)}</td><td data-o="p${i}"><b>${g2(r.pass)}</b></td><td>${r.lo} – ${r.hi}</td><td data-o="k${i}">${c.done ? PF(r.ok) : ''}</td></tr>`).join('') +
+      c.rows.map((r, i) => `<tr><td>${r.s}</td><td><input type="number" step="any" data-grw="${i}" value="${(s.w || [])[i] ?? ''}" style="width:86px"></td><td data-o="r${i}">${g2(r.ret)}</td><td data-o="c${i}">${g2(r.cum)}</td><td data-o="p${i}"><b>${g2(r.pass)}</b></td><td>${grLim(r)}</td><td data-o="k${i}">${c.done ? PF(r.ok) : ''}</td></tr>`).join('') +
       (t.pan ? `<tr><td>Pan</td><td><input type="number" step="any" data-grw="pan" value="${s.pan ?? ''}" style="width:86px"></td><td colspan="5"></td></tr>` : '') +
       `<tr><th>Total</th><th data-o="tot">${c.tot ? g2(c.tot) : ''}</th><th colspan="5"></th></tr></tbody></table></div>`; }
   h += `</div><div class="row no-print"><button class="btn sm" data-gradd="${p.key}|g">+ Gradation sample</button>${ng > 1 ? `<button class="btn sm danger" data-grdel="${p.key}|g">− aakhri hatao</button>` : ''}</div>`;
@@ -93,6 +101,7 @@ function grPartHtml(p) {
       <tr><td class="l"><b>Bitumen content (W7 / W1 × 100)</b></td><td>%</td>${out('bc', c => `<b>${g2(c.bc)}</b>`)}</tr>
       <tr><td class="l">Specified bitumen content ${t.mode === 'min' ? '(min.)' : ''}</td><td>%</td>${C.map(c => `<td>${c.spec}</td>`).join('')}</tr>
       <tr><td class="l">Permissible tolerance (±)</td><td>%</td>${C.map(c => `<td>${c.tol}</td>`).join('')}</tr>
+      ${t.minBit ? `<tr><td class="l">MoRTH minimum bitumen content</td><td>%</td>${C.map(() => `<td>${t.minBit}</td>`).join('')}</tr>` : ''}
       <tr><td class="l"><b>Result</b></td><td>–</td>${out('ok', c => PF(c.ok))}</tr></tbody></table>
       <div class="row no-print"><button class="btn sm" data-gradd="${p.key}|x">+ Extraction sample</button>${nx > 1 ? `<button class="btn sm danger" data-grdel="${p.key}|x">− aakhri hatao</button>` : ''}</div></div>`; }
   return h + '</div>';
@@ -116,8 +125,8 @@ document.addEventListener('change', e => {
   if (d.grw != null || d.grx != null) { save(); return grListOnly(); }
   if (d.grloc) { const p = grPart(d.grloc); if (p) { grDay(p).loc = e.target.value.trim(); save(); } return; }
   if (d.grt != null) { const it = DB.items.find(i => i.code == d.grt); if (!it) return; const g = grDB(), t = g.tpl[it.code] = { ...grTpl(it) };
-    t[d.f] = e.target.type === 'checkbox' ? (e.target.checked ? 1 : 0) : d.f === 'tol' ? +e.target.value || 0 : e.target.value.trim();
-    if (d.f === 'sv' && !grSieves(t).length) toast('Aise likho: 26.5:100-100, 19:90-100, …'); save(); renderGrad(); }
+    t[d.f] = e.target.type === 'checkbox' ? (e.target.checked ? 1 : 0) : (d.f === 'tol' || d.f === 'minBit') ? +e.target.value || 0 : e.target.value.trim();
+    if (d.f === 'sv' && !grSieves(t).length) toast('Aise likho: 26.5:100-100, 19:90-100, 9.5:- …'); save(); renderGrad(); }
 });
 function grListOnly() {   // upar wali tarikh-list ka status taaza karo (sheet ko chhede bina)
   const P = grParts(); $$('#grDates tbody tr').forEach((tr, i) => { const p = P[i]; if (!p) return; const s = grStatus(p);
@@ -147,7 +156,7 @@ function grPrintHtml(P) {
     let h = `<div class="reg">${grHead(p, t.title)}<div style="display:flex;flex-wrap:wrap;gap:10px">`;
     for (let n = 0; n < grN(p, d, 'g'); n++) { const c = grCalc(t, d.g[n] || {}), s = d.g[n] || {};
       h += `<div style="flex:1;min-width:44%"><div style="font-weight:700;margin:4px 0">Sample ${n + 1}</div><table><thead><tr><th>IS Sieve (mm)</th><th>Wt. Retained (g)</th><th>% Retained</th><th>Cum. % Retained</th><th>% Passing</th><th>Lower Limit</th><th>Upper Limit</th><th>Result</th></tr></thead><tbody>` +
-        c.rows.map((r, i) => `<tr><td>${r.s}</td><td>${(s.w || [])[i] ?? ''}</td><td>${g2(r.ret)}</td><td>${g2(r.cum)}</td><td>${g2(r.pass)}</td><td>${r.lo}</td><td>${r.hi}</td><td>${c.done ? PFt(r.ok) : ''}</td></tr>`).join('') +
+        c.rows.map((r, i) => `<tr><td>${r.s}</td><td>${(s.w || [])[i] ?? ''}</td><td>${g2(r.ret)}</td><td>${g2(r.cum)}</td><td>${g2(r.pass)}</td><td>${r.lo ?? '—'}</td><td>${r.hi ?? '—'}</td><td>${c.done ? PFt(r.ok) : ''}</td></tr>`).join('') +
         (t.pan ? `<tr><td>Pan</td><td>${s.pan ?? ''}</td><td colspan="6"></td></tr>` : '') +
         `<tr><td class="tot">TOTAL</td><td class="tot">${c.tot ? g2(c.tot) : ''}</td><td colspan="6" class="tot">${c.done ? (c.ok ? 'GRADATION WITHIN SPECIFIED LIMITS — PASS' : 'GRADATION NOT WITHIN SPECIFIED LIMITS — FAIL') : ''}</td></tr></tbody></table></div>`; }
     h += '</div>';
@@ -155,7 +164,7 @@ function grPrintHtml(P) {
       h += `<h4 style="margin-top:10px">BITUMEN EXTRACTION TEST (Centrifuge Method) – ${esc(p.it.name)}</h4><table><thead><tr><th style="width:44%">Particulars</th><th>Unit</th>${X.map((_, n) => `<th>Sample ${n + 1}</th>`).join('')}</tr></thead><tbody>` +
         row('Wt. of Mix Sample before Extraction (W1)', 'g', x => x.W1 ?? '') + row('Wt. of Filter Paper before Test (W2)', 'g', x => x.W2 ?? '') + row('Wt. of Filter Paper after Test (W3)', 'g', x => x.W3 ?? '') + row('Wt. of Aggregate after Extraction (W4)', 'g', x => x.W4 ?? '') +
         row('Wt. of Fines in Filter Paper (W5 = W3 − W2)', 'g', (x, c) => g2(c.W5)) + row('Total Wt. of Aggregate (W6 = W4 + W5)', 'g', (x, c) => g2(c.W6)) + row('Wt. of Bitumen (W7 = W1 − W6)', 'g', (x, c) => g2(c.W7)) +
-        row('Bitumen Content (W7 / W1 × 100)', '%', (x, c) => `<b>${g2(c.bc)}</b>`) + row(`Specified Bitumen Content${t.mode === 'min' ? ' (Min.)' : ''}`, '%', (x, c) => c.spec) + row('Permissible Tolerance (±)', '%', (x, c) => c.tol) + row('Result', '–', (x, c) => `<b>${PFt(c.ok)}</b>`) + '</tbody></table>'; }
+        row('Bitumen Content (W7 / W1 × 100)', '%', (x, c) => `<b>${g2(c.bc)}</b>`) + row(`Specified Bitumen Content${t.mode === 'min' ? ' (Min.)' : ''}`, '%', (x, c) => c.spec) + row('Permissible Tolerance (±)', '%', (x, c) => c.tol) + (t.minBit ? row('MoRTH Minimum Bitumen Content', '%', () => t.minBit) : '') + row('Result', '–', (x, c) => `<b>${PFt(c.ok)}</b>`) + '</tbody></table>'; }
     return h + grSign + '</div>'; }).join('');
 }
 // Excel — asli formula ke saath (wazan badlo to Excel mein bhi apne aap hisaab)
@@ -174,7 +183,7 @@ function grExcel() {
       const r0 = R, rT = R + sv.length + (t.pan ? 1 : 0), T = `$B$${rT + 1}`;
       sv.forEach((x, i) => { const e = R + 1; put(0, R, x.s); put(1, R, num((g.w || [])[i]));
         put(2, R, F(`IF(${T}=0,"",B${e}/${T}*100)`)); put(3, R, F(`IF(${T}=0,"",SUM($C$${r0 + 1}:C${e}))`)); put(4, R, F(`IF(D${e}="","",100-D${e})`)); put(5, R, x.lo); put(6, R, x.hi);
-        put(7, R, FS(`IF(E${e}="","",IF(AND(ROUND(E${e},2)>=F${e},ROUND(E${e},2)<=G${e}),"PASS","FAIL"))`)); R++; });
+        if (x.lo != null) put(7, R, FS(`IF(E${e}="","",IF(AND(ROUND(E${e},2)>=F${e},ROUND(E${e},2)<=G${e}),"PASS","FAIL"))`)); else { put(5, R, '-'); put(6, R, '-'); } R++; });
       if (t.pan) { put(0, R, 'Pan'); put(1, R, num(g.pan)); R++; }
       put(0, R, 'TOTAL WEIGHT (g)'); put(1, R, F(`SUM(B${r0 + 1}:B${R})`));
       put(3, R, 'OVERALL'); put(4, R, FS(`IF(${T}=0,"",IF(COUNTIF(H${r0 + 1}:H${r0 + sv.length},"FAIL")>0,"FAIL","PASS"))`)); R += 2; }
@@ -187,7 +196,8 @@ function grExcel() {
         put(c, b + 4, F(`IF(COUNT(${r(1)}:${r(2)})<2,"",${r(2)}-${r(1)})`)); put(c, b + 5, F(`IF(OR(${r(3)}="",${r(4)}=""),"",${r(3)}+${r(4)})`));
         put(c, b + 6, F(`IF(OR(${r(0)}="",${r(5)}=""),"",${r(0)}-${r(5)})`)); put(c, b + 7, F(`IF(OR(${r(0)}="",${r(0)}=0,${r(6)}=""),"",${r(6)}/${r(0)}*100)`));
         put(c, b + 8, +p.it.pct || 0); put(c, b + 9, +t.tol || 0);
-        put(c, b + 10, FS(t.mode === 'min' ? `IF(${r(7)}="","",IF(ROUND(${r(7)},2)>=${r(8)}-${r(9)},"PASS","FAIL"))` : `IF(${r(7)}="","",IF(AND(ROUND(${r(7)},2)>=${r(8)}-${r(9)},ROUND(${r(7)},2)<=${r(8)}+${r(9)}),"PASS","FAIL"))`)); }
+        const mn = +t.minBit ? `,ROUND(${r(7)},2)>=${+t.minBit}` : '';
+        put(c, b + 10, FS(t.mode === 'min' ? `IF(${r(7)}="","",IF(AND(ROUND(${r(7)},2)>=${r(8)}-${r(9)}${mn}),"PASS","FAIL"))` : `IF(${r(7)}="","",IF(AND(ROUND(${r(7)},2)>=${r(8)}-${r(9)},ROUND(${r(7)},2)<=${r(8)}+${r(9)}${mn}),"PASS","FAIL"))`)); }
       R = b + L.length + 1; }
     put(0, R + 1, 'Tested By'); put(3, R + 1, 'Checked By (Dy. Ex. Eng.)'); put(6, R + 1, 'Agency Representative');
     ws['!ref'] = XLSX.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: maxC, r: R + 1 } }); ws['!cols'] = [44, 16, 14, 20, 14, 14, 14, 12].map(wch => ({ wch }));

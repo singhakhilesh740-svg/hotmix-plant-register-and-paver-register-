@@ -984,7 +984,7 @@ $('#vehTable').addEventListener('click', e => {
 function renderSettings() {
   $$('#setForm [name]').forEach(i => { if (DB.settings[i.name] != null) i.value = DB.settings[i.name]; });
   $('#itemTable').innerHTML = `<thead><tr><th>Item no.</th><th>Mix</th><th>Design bitumen %</th><th>Thickness (mm)</th><th>Density</th><th>1 T = sq.m</th><th>Tack coat (kg/sq.m)</th><th>Estimate qty (MT)</th><th>Tack coat daamar (poora kaam)</th><th></th></tr></thead><tbody>` +
-    (DB.items.map((it, k) => { const p = itemParams(it); return `<tr><td>${esc(it.code)}</td><td>${esc(it.name)}</td><td>${it.pct}</td><td>${p.th}</td><td>${p.den}</td><td>${f2(1 / (p.den * p.th / 1000))}</td><td>${p.tack ? p.tack : '<span class="muted">nahi</span>'}</td>
+    (DB.items.map((it, k) => { const p = itemParams(it); return `<tr><td>${esc(it.code)}</td><td>${esc(it.name)}${it.grading ? ` <span class="pill">Grading ${it.grading}</span>` : ''}</td><td>${it.pct}${itemMinBit(it.name, +it.grading, itemParams(it).th) ? ` <span class="muted">(min ${itemMinBit(it.name, +it.grading, itemParams(it).th)})</span>` : ''}</td><td>${p.th}</td><td>${p.den}</td><td>${f2(1 / (p.den * p.th / 1000))}</td><td>${p.tack ? p.tack : '<span class="muted">nahi</span>'}</td>
       <td>${itemEstQty(it) ? f2(itemEstQty(it)) + (it.estQty ? '' : ' <span class="muted">(Progress se)</span>') : '—'}</td>
       <td>${p.tack && itemEstQty(it) ? f3(itemEstQty(it) / (p.den * p.th / 1000) * p.tack / 1000) + ' MT' : '—'}</td><td><button class="btn sm" data-edit_it="${k}">✏️</button> <button class="btn sm danger" data-delit="${k}">🗑</button></td></tr>`; }).join('') || '<tr><td colspan="10" class="muted">Item add karo (jaise 10 – BM – 3.3%)</td></tr>') + '</tbody>';
   renderStaff(); renderGpBooks();
@@ -1003,14 +1003,16 @@ $('#btnSaveSet').addEventListener('click', () => {
 $('#btnAddItem').addEventListener('click', () => {
   const code = $('#itCode').value.trim(), name = $('#itName').value.trim().toUpperCase(), pct = +$('#itPct').value;
   if (!code || !name) return toast('Item no. aur mix daalo');
-  const th = +$('#itTh').value || 0, den = +$('#itDen').value || 0, tack = +$('#itTack').value || 0, estQty = +$('#itEst').value || 0;
-  DB.items = DB.items.filter(i => i.code !== code); DB.items.push({ code, name, pct, th, den, tack, estQty });
+  const th = +$('#itTh').value || 0, den = +$('#itDen').value || 0, tack = +$('#itTack').value || 0, estQty = +$('#itEst').value || 0, grading = +$('#itGr').value || 0;
+  if (!pct) { $('#itPct').focus(); return toast('Design bitumen % bharo (job mix formula se)'); }
+  const mn = itemMinBit(name, grading, th); if (mn && pct < mn && !confirm(`${name} ke liye MoRTH minimum bitumen ${mn}% hai, tumne ${pct}% bhara. Phir bhi save karein?`)) return;
+  DB.items = DB.items.filter(i => i.code !== code); DB.items.push({ code, name, pct, th, den, tack, estQty, grading });
   DB.runs.forEach(r => { if (r.item == code) r.mix = name; });   // naam badla to saved register mein bhi
-  save(); ['#itCode', '#itName', '#itPct', '#itTh', '#itDen', '#itTack', '#itEst'].forEach(k => $(k).value = ''); renderAll();
+  save(); ['#itCode', '#itName', '#itPct', '#itTh', '#itDen', '#itTack', '#itEst', '#itGr'].forEach(k => $(k).value = ''); renderAll();
 });
 $('#itemTable').addEventListener('click', e => {
   const ek = e.target.dataset.edit_it;
-  if (ek != null) { const it = DB.items[+ek]; $('#itCode').value = it.code; $('#itName').value = it.name; $('#itPct').value = it.pct; { const p = itemParams(it); $('#itTh').value = p.th; $('#itDen').value = p.den; $('#itTack').value = it.tack || ''; $('#itEst').value = it.estQty || ''; } $('#itName').focus(); return toast('Badal kar "+ Add" dabao'); }
+  if (ek != null) { const it = DB.items[+ek]; $('#itCode').value = it.code; $('#itName').value = it.name; $('#itPct').value = it.pct; { const p = itemParams(it); $('#itTh').value = p.th; $('#itDen').value = p.den; $('#itTack').value = it.tack || ''; $('#itEst').value = it.estQty || ''; $('#itGr').value = it.grading || ''; } $('#itName').focus(); return toast('Badal kar "+ Add" dabao'); }
   const k = e.target.dataset.delit; if (k == null) return; DB.items.splice(+k, 1); save(); renderAll(); });
 function renderGpBooks() {
   const el = $('#gpBooksBox'); if (!el) return;
@@ -1451,3 +1453,13 @@ $('#chLockBox').addEventListener('click', e => {
 
 // number box par mouse scroll se value na badle
 document.addEventListener('wheel', e => { const a = document.activeElement; if (a && a.type === 'number' && e.target === a) a.blur(); }, { passive: true });
+
+// BC / DBM ka MoRTH minimum bitumen (Table 500-17 / 500-10)
+function itemMinBit(name, gr, th) { const n = String(name || '').toUpperCase();
+  if (/DBM/.test(n)) return (gr || (th >= 75 ? 1 : 2)) === 1 ? 4.0 : 4.5;
+  if (/BC/.test(n) && !/SDBC/.test(n)) return (gr || (th >= 45 ? 1 : 2)) === 1 ? 5.2 : 5.4; return 0; }
+const ITEM_PRESET = { BSG: ['BSG', 37.5, 2.0, ''], BM: ['BM', 50, 2.2, ''], SDBC: ['SDBC', 25, 2.3, ''], DBM1: ['DBM', 80, 2.3, 1], DBM2: ['DBM', 50, 2.3, 2], BC1: ['BC', 50, 2.3, 1], BC2: ['BC', 40, 2.3, 2] };
+document.addEventListener('click', e => { const k = e.target.dataset?.preset; if (!k) return; const [n, th, den, gr] = ITEM_PRESET[k];
+  $('#itName').value = n; $('#itTh').value = th; $('#itDen').value = den; $('#itGr').value = gr; $('#itPct').value = '';
+  const mn = itemMinBit(n, gr, th); $('#itPct').placeholder = mn ? `MoRTH min ${mn}` : '';
+  (!$('#itCode').value ? $('#itCode') : $('#itPct')).focus(); toast(`${n}${gr ? ' grading ' + gr : ''}: item no. aur design bitumen % bharo${mn ? ` (MoRTH min ${mn}%)` : ''} → + Add`); });
