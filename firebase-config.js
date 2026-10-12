@@ -9,4 +9,5 @@ window.FIREBASE_CONFIG = {apiKey: "AIzaSyA6Q8vpAW1EnGyt5Xe8G8C0IgV3NEijeSg",
   appId: "1:1038594561376:web:efa9c76dc6c6e80072fa05",
   measurementId: "G-571ZMSDBW7"
   };
-*/
+
+
