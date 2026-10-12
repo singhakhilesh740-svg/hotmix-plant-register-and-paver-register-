@@ -190,3 +190,15 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}
 .dt-tbl td.dt-act input{width:92px;font-weight:700;color:#0b3d91;border-color:#9ec5fe;background:#fff;text-align:right}
 .dt-tbl tr.dt-tot th{background:#eef2f7;position:sticky;bottom:0;z-index:1}
 .dt-tbl tr.dt-tot th.dt-act{background:#cfe2ff!important}
+
+/* vehicle kaise jodein */
+.veh-how{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:820px){.veh-how{grid-template-columns:1fr}}
+.veh-opt{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fbfcfe}
+.veh-opt h4{margin:0 0 8px}
+#vehHowPanel.veh-empty{border:2px solid var(--pri2);box-shadow:0 0 0 4px var(--chip)}
+.veh-sample{background:#fffef6;border:1px dashed #b9b08a;border-radius:6px;padding:8px 10px;font-family:"Segoe Print","Comic Sans MS",cursive;transform:rotate(-.6deg);max-width:340px}
+.veh-sample .vs-title{font-weight:700;text-align:center;margin-bottom:4px}
+.veh-sample table{border-collapse:collapse;width:100%;font-size:13px}
+.veh-sample th,.veh-sample td{border:1px solid #8a8466;padding:2px 6px;text-align:center}
+.veh-tips{margin:8px 0;padding-left:18px}

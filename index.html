@@ -14,7 +14,7 @@
 </head>
 <body>
 <header class="topbar no-print">
-  <div class="brand"><img src="icon.svg" alt=""><div><b>RnB Office</b><small>v15 · 12-10-2026</small></div>
+  <div class="brand"><img src="icon.svg" alt=""><div><b>RnB Office</b><small>v16 · 12-10-2026</small></div>
     <nav class="secnav" id="secNav"></nav>
     <select id="workSel" class="worksel" title="Kaam (work) chuno"></select><div class="userbox" id="userBox"></div></div>
 </header>
@@ -177,16 +177,38 @@
 
   <!-- VEHICLES -->
   <section id="tab-vehicles" class="tab">
-    <div class="panel">
-      <h3>Vehicles bulk add</h3>
-      <p class="muted">Photo se tare ke liye Chat mein RC / weighbridge slip / truck list ki photo daalo. Yahan se: har truck ko range mein ek base tare milega; load tare se apne aap.</p>
+    <div class="panel" id="vehHowPanel">
+      <h3>🚚 Vehicle kaise jodein — do tareeke</h3>
+      <div class="veh-how">
+        <div class="veh-opt">
+          <h4>1️⃣ Haath se (ek-ek truck)</h4>
+          <div class="row"><input id="vNo" placeholder="Vehicle no. — GJ20V5115" style="width:200px"><input id="vTare" type="text" inputmode="numeric" placeholder="Tare (kg) — 12240" style="width:150px"><button class="btn primary" id="btnAddOneVeh">+ Add</button></div>
+          <p class="muted">Tare = khali truck ka wazan (kg), weighbridge slip ya RC book se. Load (net) tare se apne aap ban jayega, baad mein badal sakte ho.</p>
+        </div>
+        <div class="veh-opt">
+          <h4>2️⃣ Chatbot mein photo daal kar (kai truck ek saath)</h4>
+          <p class="muted" style="margin:0 0 6px">Kaagaz par aisi list likh kar / print karke photo kheencho aur 🤖 Chat mein daalo:</p>
+          <div class="veh-sample"><div class="vs-title">Vehicle list — Tare weight</div>
+            <table><thead><tr><th>Kram</th><th>Vehicle No.</th><th>Tare (kg)</th></tr></thead>
+            <tbody><tr><td>1</td><td>GJ20V5115</td><td>12240</td></tr><tr><td>2</td><td>GJ20X6116</td><td>12180</td></tr><tr><td>3</td><td>GJ17T7117</td><td>12310</td></tr><tr><td>…</td><td>…</td><td>…</td></tr></tbody></table></div>
+          <ul class="muted veh-tips"><li>Har line mein <b>poora vehicle no.</b> aur <b>tare kg mein</b> (tonne mein ho to bhi chalega, jaise 12.24 T).</li>
+            <li>Photo seedhi, saaf roshni mein, poori list ek photo mein.</li>
+            <li>Weighbridge ki <b>tare slip</b> ya <b>RC book</b> (Unladen weight) ki photo bhi chalegi.</li>
+            <li>Chatbot padh kar dikhayega — check karke <b>Save</b> dabao.</li></ul>
+          <button class="btn" data-gotab="chat">🤖 Chat kholo</button>
+        </div>
+      </div>
+    </div>
+    <details class="panel">
+      <summary style="cursor:pointer;font-weight:600">Tare pata nahi? — sirf truck no. se range mein jodo</summary>
+      <p class="muted">Har truck ko is range mein ek andaze ka base tare milega (baad mein asli tare bhar dena).</p>
       <label>Truck numbers (comma / new line)<textarea id="vehList" rows="3" placeholder="5115, 6116, 7117, 8338"></textarea></label>
       <div class="grid4">
         <label>Tare min (kg)<input type="number" id="tareMin" value="12150"></label>
         <label>Tare max (kg)<input type="number" id="tareMax" value="12350"></label>
       </div>
       <button class="btn primary" id="btnAddVeh">+ Add vehicles</button>
-    </div>
+    </details>
     <div class="panel">
       <h3>Vehicle datasheet</h3>
       <p class="muted">Order = truck rotation ka kram. Roz ka tare base se −100…+200 kg (ek din mein ek hi). Har trip ka load = Load ±700 kg random. ↺ = tare se load dobara.</p>

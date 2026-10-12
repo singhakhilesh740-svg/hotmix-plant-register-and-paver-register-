@@ -63,12 +63,12 @@ function newWork() {
   const name = (prompt('Naye kaam ka naam:') || '').trim();
   if (!name) { renderWorkSelect(); return; }
   const w = fixWork({ settings: { workName: name } });
-  if (DB && (DB.vehicles.length || DB.items.length) && confirm(`"${DB.settings.workName}" ke vehicles aur tender items naye work mein copy karein?\n(Opening balance, gatepass, register copy nahi honge)`)) {
-    w.vehicles = JSON.parse(JSON.stringify(DB.vehicles)); w.items = JSON.parse(JSON.stringify(DB.items));
+  if (DB && DB.items.length && confirm(`"${DB.settings.workName}" ke tender items aur plant settings naye work mein copy karein?\n(Vehicles, opening balance, gatepass, register copy nahi honge)`)) {
+    w.items = JSON.parse(JSON.stringify(DB.items));
     ['agency', 'plant', 'division', 'tempMin', 'tempMax', 'diffMin', 'diffMax'].forEach(k => w.settings[k] = DB.settings[k]);
   }
-  const id = uid(); STORE.works[id] = w; switchWork(id);
-  toast(`"${name}" bana. Settings / Vehicles / Bitumen mein details bharo.`);
+  const id = uid(); STORE.works[id] = w; switchWork(id); showTab('vehicles');
+  toast(`"${name}" bana. Pehle vehicles jodo — haath se ya Chat mein photo daal kar.`);
 }
 function aiCfg() { try { return JSON.parse(localStorage.getItem(AIKEY) || '{}'); } catch (e) { return {}; } }
 
@@ -950,7 +950,7 @@ $('#btnAddVeh').addEventListener('click', () => {
   save(); $('#vehList').value = ''; toast(`${added} vehicles add hue`); renderAll();
 });
 function renderVehicles() {
-  const V = DB.vehicles;
+  const V = DB.vehicles; $('#vehHowPanel').classList.toggle('veh-empty', !V.length);
   $('#vehTable').innerHTML = `<thead><tr><th>Kram</th><th>Truck no.</th><th>Base tare (kg)</th><th>Roz ka tare</th><th>Load (kg) ±${NET_SPREAD}</th><th>Status</th><th>Active</th><th></th></tr></thead><tbody>` +
     (V.map((v, i) => `<tr><td>${i + 1}</td><td><b>${esc(v.no)}</b></td>
       <td><input type="number" step="10" data-vi="${i}" data-vf="tare" value="${v.tare}"></td>
@@ -1463,3 +1463,18 @@ document.addEventListener('click', e => { const k = e.target.dataset?.preset; if
   $('#itName').value = n; $('#itTh').value = th; $('#itDen').value = den; $('#itGr').value = gr; $('#itPct').value = '';
   const mn = itemMinBit(n, gr, th); $('#itPct').placeholder = mn ? `MoRTH min ${mn}` : '';
   (!$('#itCode').value ? $('#itCode') : $('#itPct')).focus(); toast(`${n}${gr ? ' grading ' + gr : ''}: item no. aur design bitumen % bharo${mn ? ` (MoRTH min ${mn}%)` : ''} → + Add`); });
+
+// ek truck haath se
+$('#btnAddOneVeh').addEventListener('click', () => {
+  const no = normVeh($('#vNo').value); let t = +String($('#vTare').value).replace(/[, ]/g, '');
+  if (!no) { $('#vNo').focus(); return toast('Vehicle no. likho'); }
+  if (!t) { $('#vTare').focus(); return toast('Tare (kg) likho'); }
+  if (t < 100) t = Math.round(t * 1000);   // tonne mein likha (12.24) to kg
+  if (t < 3000 || t > 40000) return toast('Tare kg mein likho (jaise 12240)');
+  const ex = DB.vehicles.find(v => v.no === no);
+  if (ex) { if (!confirm(`${no} pehle se hai (tare ${ex.tare}). Naya tare ${t} lagayein?`)) return; ex.tare = t; ex.tentative = false; ex.cap = netFromTare(t); }
+  else DB.vehicles.push({ no, tare: t, cap: netFromTare(t), tentative: false, active: true });
+  save(); $('#vNo').value = $('#vTare').value = ''; $('#vNo').focus(); toast(`${no} jud gaya`); renderAll();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.target.id === 'vNo' || e.target.id === 'vTare')) $('#btnAddOneVeh').click(); });
+document.addEventListener('click', e => { const t = e.target.dataset?.gotab; if (t) showTab(t); });
