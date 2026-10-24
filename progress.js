@@ -41,6 +41,12 @@ function pgData() {
       : { road: { name: DB.settings.workName || '', start: 0, end: null, cw: 5.5, agency: '', ded: [], facts: [] }, layers: PG_LAYERS(), stretches: [] };
     save();
   }
+  // Settings ke har item ki layer Progress mein ho (jaise naya MSS / DBM / BC)
+  const P = DB.progress, COL = { MSS: '#4a4f55', DBM: '#5d4a3a', BC: '#1f2326', BM: '#7a5c46', BSG: '#b98a4a', SDBC: '#2b3136' };
+  let add = false;
+  (DB.items || []).forEach(it => { const t = String(it.name || '').toUpperCase(); if (!t || P.layers.some(l => l.t === t)) return;
+    const q = itemParams(it); P.layers.push({ t, name: `${q.th} mm ${t}`, spec: t === 'MSS' ? 'Mix seal surfacing' : '', th: q.th / 1000, den: q.den, color: COL[t] || '#888888', below: null, est: null }); add = true; });
+  if (add) save();
   return DB.progress;
 }
 

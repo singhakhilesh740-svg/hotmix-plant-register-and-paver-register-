@@ -1,7 +1,7 @@
 /* ================= Test schedule — MoRTH Section 900 (5th rev.) ke minimum frequency par =================
    Sirf GINTI batata hai (kitne test lagte hain / kitne hue). Test ke result app nahi banata — wo lab se aate hain. */
 const TS_BASIS = { tonne: 'har N tonne mix (min/din)', cum: 'har N cum aggregate/material', sqm: 'har N sq.m', day: 'N test roz', truck: 'har N-ve truck par', lot: 'har lot / tanker', source: 'har source par ek baar', regular: 'lagataar (ginti nahi)' };
-const TS_GRP = { AGG: 'Coarse aggregate (sab item combined)', BINDER: 'Bitumen (binder)', TACK: 'Tack coat', BM: 'Bituminous Macadam / BSG', DBM: 'DBM / SDBC / BC', GSB: 'Granular Sub-base (GSB)', WMM: 'Wet Mix Macadam (WMM)', OTHER: 'Anya (is kaam ke)' };
+const TS_GRP = { AGG: 'Coarse aggregate (sab item combined)', BINDER: 'Bitumen (binder)', TACK: 'Tack coat', BM: 'Bituminous Macadam / BSG / MSS', DBM: 'DBM / SDBC / BC', GSB: 'Granular Sub-base (GSB)', WMM: 'Wet Mix Macadam (WMM)', OTHER: 'Anya (is kaam ke)' };
 function TS_AGG_SEED() {
   const T = (name, basis, n, ref) => ({ id: uid(), grp: 'AGG', name, basis, n, minDay: 0, ref });
   return [T('Aggregate Impact Value / Los Angeles Abrasion', 'cum', 350, 'IS:2386 (P-4)'), T('Flakiness + Elongation Index', 'cum', 350, 'IS:2386 (P-1)'),

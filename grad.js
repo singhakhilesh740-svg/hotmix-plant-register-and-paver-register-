@@ -10,13 +10,16 @@ const GR_DEF = {
   BC2: { sv: '19:100-100, 13.2:90-100, 9.5:70-88, 4.75:53-71, 2.36:42-58, 1.18:34-48, 0.6:26-38, 0.3:18-28, 0.15:12-20, 0.075:4-10', pan: 1, ext: 1, mode: 'range', tol: 0.3, minBit: 5.4, mat: '', title: 'GRADATION FOR BITUMINOUS CONCRETE (BC) — GRADING 2 (13.2 mm nominal, 30-40 mm layer)' },
   DBM1: { sv: '45:100-100, 37.5:95-100, 26.5:63-93, 19:-, 13.2:55-75, 9.5:-, 4.75:38-54, 2.36:28-42, 1.18:-, 0.6:-, 0.3:7-21, 0.15:-, 0.075:2-8', pan: 1, ext: 1, mode: 'range', tol: 0.3, minBit: 4.0, mat: '', title: 'GRADATION FOR DENSE BITUMINOUS MACADAM (DBM) — GRADING 1 (37.5 mm nominal, 75-100 mm layer)' },
   DBM2: { sv: '26.5:100-100, 19:90-100, 13.2:71-95, 9.5:56-80, 4.75:38-54, 2.36:28-42, 1.18:-, 0.6:-, 0.3:7-21, 0.15:-, 0.075:2-8', pan: 1, ext: 1, mode: 'range', tol: 0.3, minBit: 4.5, mat: '', title: 'GRADATION FOR DENSE BITUMINOUS MACADAM (DBM) — GRADING 2 (26.5 mm nominal, 50-75 mm layer)' },
+  // Mix Seal Surfacing (MoRTH Clause 513) — Type A / Type B, 20 mm
+  MSSA: { sv: '13.2:100-100, 11.2:88-100, 5.6:31-52, 2.8:5-25, 0.09:0-5', pan: 1, ext: 1, mode: 'range', tol: 0.3, mat: '', title: 'GRADATION FOR MIX SEAL SURFACING (MSS) — TYPE A' },
+  MSSB: { sv: '11.2:100-100, 5.6:52-88, 2.8:14-38, 0.09:0-5', pan: 1, ext: 1, mode: 'range', tol: 0.3, mat: '6-10 mm chips:70, Stone Dust:30', title: 'GRADATION FOR MIX SEAL SURFACING (MSS) — TYPE B' },
   X: { sv: '', pan: 0, ext: 1, mode: 'range', tol: 0.3, mat: '', title: '' },
 };
 function grDB() { if (!DB.grad) DB.grad = { tpl: {}, days: {} }; DB.grad.tpl = DB.grad.tpl || {}; DB.grad.days = DB.grad.days || {}; return DB.grad; }
 function grTpl(it) {
   const g = grDB(); if (g.tpl[it.code]) return g.tpl[it.code];
   const n = (it.name || '').toUpperCase(), gr = +it.grading || 0, th = +itemParams(it).th;
-  const k = /BSG|BUSG/.test(n) ? 'BSG' : /SDBC/.test(n) ? 'SDBC' : /DBM/.test(n) ? ((gr || (th >= 75 ? 1 : 2)) === 1 ? 'DBM1' : 'DBM2') : /BC/.test(n) ? ((gr || (th >= 45 ? 1 : 2)) === 1 ? 'BC1' : 'BC2') : /BM/.test(n) ? 'BM' : 'X';
+  const k = /MSS/.test(n) ? ((gr || 2) === 1 ? 'MSSA' : 'MSSB') : /BSG|BUSG/.test(n) ? 'BSG' : /SDBC/.test(n) ? 'SDBC' : /DBM/.test(n) ? ((gr || (th >= 75 ? 1 : 2)) === 1 ? 'DBM1' : 'DBM2') : /BC/.test(n) ? ((gr || (th >= 45 ? 1 : 2)) === 1 ? 'BC1' : 'BC2') : /BM/.test(n) ? 'BM' : 'X';
   return { ...GR_DEF[k], title: GR_DEF[k].title || `GRADATION FOR ${n}` };
 }
 function grSieves(t) { return String(t.sv || '').split(',').map(x => x.trim().match(/^([\d.]+)\s*:\s*(?:([\d.]+)\s*-\s*([\d.]+)|-)$/)).filter(Boolean).map(m => ({ s: +m[1], lo: m[2] == null ? null : +m[2], hi: m[3] == null ? null : +m[3] })); }

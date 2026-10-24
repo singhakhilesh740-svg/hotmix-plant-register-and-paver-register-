@@ -755,8 +755,8 @@ $('#btnXlsPlant').addEventListener('click', () => {
 // ---- Tack coat: estimate item ka rate (kg/sq.m) × area; area = mix T ÷ (density × thickness)
 function itemParams(it) {
   const n = (it?.name || '').toUpperCase();
-  const dDen = /SDBC|BC$|^BC/.test(n) ? 2.3 : /DBM/.test(n) ? 2.3 : /BM/.test(n) ? 2.2 : /BSG|BUSG/.test(n) ? 2.0 : 2.2;
-  const dTh = /SDBC/.test(n) ? 25 : /BSG|BUSG/.test(n) ? 37.5 : /BC/.test(n) ? 40 : 50;
+  const dDen = /MSS/.test(n) ? 2.2 : /SDBC|BC$|^BC/.test(n) ? 2.3 : /DBM/.test(n) ? 2.3 : /BM/.test(n) ? 2.2 : /BSG|BUSG/.test(n) ? 2.0 : 2.2;
+  const dTh = /MSS/.test(n) ? 20 : /SDBC/.test(n) ? 25 : /BSG|BUSG/.test(n) ? 37.5 : /BC/.test(n) ? 40 : 50;
   return { den: +it?.den || dDen, th: +it?.th || dTh, tack: +it?.tack || 0 };
 }
 function itemEstQty(it) {   // Settings ka estimate MT, warna Progress tab ki layer ka estimate MT
@@ -1001,7 +1001,7 @@ $('#btnSaveSet').addEventListener('click', () => {
   save(); toast('Settings save hui'); renderAll();
 });
 $('#btnAddItem').addEventListener('click', () => {
-  const code = $('#itCode').value.trim(), name = $('#itName').value.trim().toUpperCase(), pct = +$('#itPct').value;
+  const code = $('#itCode').value.trim(), name = mixName($('#itName').value), pct = +$('#itPct').value;
   if (!code || !name) return toast('Item no. aur mix daalo');
   const th = +$('#itTh').value || 0, den = +$('#itDen').value || 0, tack = +$('#itTack').value || 0, estQty = +$('#itEst').value || 0, grading = +$('#itGr').value || 0;
   if (!pct) { $('#itPct').focus(); return toast('Design bitumen % bharo (job mix formula se)'); }
@@ -1229,7 +1229,7 @@ async function handleChatFile(f) {
     const b64 = dataUrl.split(',')[1]; const mime = dataUrl.slice(5, dataUrl.indexOf(';'));
     const prompt = `This is a photo of a document at an Indian hot mix plant. Classify and extract. Return ONLY JSON:
 {"doc_type":"gatepass"|"vehicle_tare"|"estimate"|"scada"|"other",
- "items":[{"item_no":"","name":"short mix name e.g. BM, SDBC, DBM, BSG, BC","thickness_mm":number,"qty_mt":number,"bitumen_pct":number,"tack_kg_sqm":number,"density":number}]  (only for estimate: road work estimate / abstract / rate analysis. For each bituminous item: compacted thickness, total quantity in MT (convert cum x density if needed), bitumen content % by weight of mix, and tack coat bitumen rate in kg per sqm if the item includes tack coat else 0. Use null when not found),
+ "items":[{"item_no":"","name":"short mix name e.g. BM, SDBC, DBM, BSG, BC, MSS (write MSS for Mix Seal Surfacing / mix seal surfaceasing; BSG for BUSG / built-up spray grout)","thickness_mm":number,"qty_mt":number,"bitumen_pct":number,"tack_kg_sqm":number,"density":number}]  (only for estimate: road work estimate / abstract / rate analysis. For each bituminous item: compacted thickness, total quantity in MT (convert cum x density if needed), bitumen content % by weight of mix, and tack coat bitumen rate in kg per sqm if the item includes tack coat else 0. Use null when not found),
  "vehicles":[{"vehicle_no":"e.g. GJ20V5115, no spaces","tare_kg":number}]  (only for vehicle_tare: weighbridge slip, RC book unladen weight, or a handwritten/printed list of trucks with tare/empty weight. Convert tonnes to kg),
  "supplier":"IOCL/BPCL/HPCL/other name",
  "invoice_no":"tax invoice number (e.g. GJ5534275388 or 4541387410)",
@@ -1324,7 +1324,7 @@ function showEstimateConfirm(j) {
     let add = 0, upd = 0;
     list.forEach((_, k) => {
       const g = n => box.querySelector(`[data-k="${k}"][data-n="${n}"]`).value.trim();
-      const name = g('name').toUpperCase(); if (!name) return;
+      const name = mixName(g('name')); if (!name) return;
       let it = DB.items.find(i => i.name.toUpperCase() === name) || (g('code') && DB.items.find(i => i.code == g('code')));
       if (!it) { it = { code: g('code') || String(DB.items.length + 1), name, pct: 0 }; DB.items.push(it); add++; } else upd++;
       it.name = name;
@@ -1458,10 +1458,10 @@ document.addEventListener('wheel', e => { const a = document.activeElement; if (
 function itemMinBit(name, gr, th) { const n = String(name || '').toUpperCase();
   if (/DBM/.test(n)) return (gr || (th >= 75 ? 1 : 2)) === 1 ? 4.0 : 4.5;
   if (/BC/.test(n) && !/SDBC/.test(n)) return (gr || (th >= 45 ? 1 : 2)) === 1 ? 5.2 : 5.4; return 0; }
-const ITEM_PRESET = { BSG: ['BSG', 37.5, 2.0, ''], BM: ['BM', 50, 2.2, ''], SDBC: ['SDBC', 25, 2.3, ''], DBM1: ['DBM', 80, 2.3, 1], DBM2: ['DBM', 50, 2.3, 2], BC1: ['BC', 50, 2.3, 1], BC2: ['BC', 40, 2.3, 2] };
+const ITEM_PRESET = { MSSA: ['MSS', 20, 2.2, 1], MSSB: ['MSS', 20, 2.2, 2], BSG: ['BSG', 37.5, 2.0, ''], BM: ['BM', 50, 2.2, ''], SDBC: ['SDBC', 25, 2.3, ''], DBM1: ['DBM', 80, 2.3, 1], DBM2: ['DBM', 50, 2.3, 2], BC1: ['BC', 50, 2.3, 1], BC2: ['BC', 40, 2.3, 2] };
 document.addEventListener('click', e => { const k = e.target.dataset?.preset; if (!k) return; const [n, th, den, gr] = ITEM_PRESET[k];
   $('#itName').value = n; $('#itTh').value = th; $('#itDen').value = den; $('#itGr').value = gr; $('#itPct').value = '';
-  const mn = itemMinBit(n, gr, th); $('#itPct').placeholder = mn ? `MoRTH min ${mn}` : '';
+  const mn = itemMinBit(n, gr, th); $('#itPct').placeholder = mn ? `MoRTH min ${mn}` : n === 'MSS' ? 'rate analysis wala %' : '';
   (!$('#itCode').value ? $('#itCode') : $('#itPct')).focus(); toast(`${n}${gr ? ' grading ' + gr : ''}: item no. aur design bitumen % bharo${mn ? ` (MoRTH min ${mn}%)` : ''} → + Add`); });
 
 // ek truck haath se
@@ -1478,3 +1478,11 @@ $('#btnAddOneVeh').addEventListener('click', () => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.target.id === 'vNo' || e.target.id === 'vTare')) $('#btnAddOneVeh').click(); });
 document.addEventListener('click', e => { const t = e.target.dataset?.gotab; if (t) showTab(t); });
+
+// mix ka naam ek jaisa: Mix Seal Surfacing -> MSS, BUSG -> BSG
+function mixName(v) { const n = String(v || '').trim().toUpperCase();
+  if (/MIX(ED)?\s*SEAL|^M\.?S\.?S\.?$/.test(n)) return 'MSS';
+  if (/^BUSG$|BUILT.?UP\s*SPRAY/.test(n)) return 'BSG';
+  if (/SEMI.?DENSE/.test(n)) return 'SDBC'; if (/DENSE\s*BIT/.test(n)) return 'DBM';
+  if (/^BITUMINOUS\s*MACADAM$/.test(n)) return 'BM'; if (/^BITUMINOUS\s*CONCRETE$/.test(n)) return 'BC';
+  return n; }
