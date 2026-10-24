@@ -118,7 +118,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.target.id === 'ltMsg' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) ltChatSend(); });
 function setSection(s) { const A = window.ALLOWED || ['road', 'letter']; if (!A.includes(s)) s = A[0] || 'road'; document.body.dataset.sec = s; try { localStorage.setItem('rnb_sec', s); } catch (e) {}
-  $$('#secNav button').forEach(b => b.classList.toggle('active', b.dataset.sec === s)); if (s === 'letter') renderLetter(); else if (s === 'admin') { if (typeof renderAdmin === 'function') renderAdmin(); } else renderAll(); }
+  $$('#secNav button').forEach(b => b.classList.toggle('active', b.dataset.sec === s)); if (s === 'letter') renderLetter(); else if (s === 'concrete') {} else if (s === 'admin') { if (typeof renderAdmin === 'function') renderAdmin(); } else renderAll(); }
 // ---------- chatbot ----------
 const LT_RULES = `You draft official letters for the Deputy Executive Engineer, R & B Sub Division, Dahod (Government of Gujarat, Roads & Buildings Department).
 House rules:

@@ -202,3 +202,7 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}
 .veh-sample table{border-collapse:collapse;width:100%;font-size:13px}
 .veh-sample th,.veh-sample td{border:1px solid #8a8466;padding:2px 6px;text-align:center}
 .veh-tips{margin:8px 0;padding-left:18px}
+
+body:not([data-sec="concrete"]) #secConcrete{display:none}
+.cc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0}
+.cc-grid>div{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fbfcfe;font-size:13px}

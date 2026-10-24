@@ -5,6 +5,7 @@ const ADMIN_EMAIL = '112ce0489@gmail.com';
 const SECTIONS = [
   { id: 'road', label: '🛣️ Road Register', def: true },
   { id: 'letter', label: '✉️ Letter', def: false },
+  { id: 'concrete', label: '🧱 Concrete Work', def: false },
 ];
 const FB_VER = '11.10.0';
 let FB = null, ME = null, ACCESS = null;
