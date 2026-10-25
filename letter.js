@@ -139,7 +139,7 @@ async function ltFilePart(f) {
 }
 async function ltChatSend() {
   const box = $('#ltMsg'), msg = box.value.trim(), f = LT_FILE; if (!msg && !f) return toast('Vishay likho ya file daalo');
-  if (!aiCfg().key) return toast('Pehle Road Register → Settings mein AI key daalo');
+  if (!aiReady()) return toast(aiNoMsg('Patra banane'));
   LT.chat.push({ r: 'user', t: (f ? `📎 ${f.name}\n` : '') + msg }); box.value = ''; LT_FILE = null; $('#ltFile').value = ''; $('#ltFileName').textContent = ''; renderLetter();
   $('#ltSend').disabled = true; $('#ltSend').textContent = '…';
   try {

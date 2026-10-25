@@ -14,7 +14,7 @@
 </head>
 <body>
 <header class="topbar no-print">
-  <div class="brand"><img src="icon.svg" alt=""><div><b>RnB Office</b><small>v18 · 24-10-2026</small></div>
+  <div class="brand"><img src="icon.svg" alt=""><div><b>RnB Office</b><small>v19 · 25-10-2026</small></div>
     <nav class="secnav" id="secNav"></nav>
     <select id="workSel" class="worksel" title="Kaam (work) chuno"></select><div class="userbox" id="userBox"></div></div>
 </header>
@@ -50,7 +50,11 @@
     <p class="muted">Pehli baar kholne par wahan bhi Google se login karna hoga (wahi email). Wahan upar "← RnB Office" se wapas aa sakte ho.</p>
   </div></div>
   <!-- ============ ADMIN ============ -->
-  <div id="secAdmin"><div class="panel"><h3>🛡️ Admin panel — kaun sa section kise dikhe</h3><div class="row"><button class="btn sm" id="admRefresh">↻ Refresh</button></div><div id="admBox"></div></div></div>
+  <div id="secAdmin"><div class="panel"><h3>🤖 Chatbot setting (sab users ke liye)</h3>
+    <p class="muted">API key Cloudflare Worker mein surakshit rehti hai — kisi user ko key nahi deni padti. Kise chatbot milega, neeche "🤖 Chatbot" tick se tay karo.</p>
+    <div class="grid4"><label>Worker URL<input id="admWorker" placeholder="https://rnb-road-chat.xxxx.workers.dev"></label><label>Model<input id="admModel" list="aiModels" placeholder="claude-sonnet-5-5"></label>
+    <div class="end"><button class="btn primary" id="admCfgSave">Save</button></div></div></div>
+  <div class="panel"><h3>🛡️ Admin panel — kaun sa section kise dikhe</h3><div class="row"><button class="btn sm" id="admRefresh">↻ Refresh</button></div><div id="admBox"></div></div></div>
 
   <!-- ============ LETTER SECTION ============ -->
   <div id="secLetter">
@@ -453,7 +457,9 @@
       <div class="tablewrap"><table class="grid" id="itemTable"></table></div>
     </div>
     <div class="panel">
-      <h3>Chatbot (AI) — API key</h3>
+      <h3>Chatbot (AI)</h3>
+      <p id="aiWorkerNote" class="hidden" style="font-weight:600"></p>
+      <div id="aiKeyPanel">
       <p class="muted">Key sirf isi phone/computer ke browser mein save hoti hai, GitHub code mein nahi jaati.<br>
         Claude key: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> (prepaid credit lagta hai) ·
         Gemini key (free): <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a></p>
@@ -463,6 +469,7 @@
         <label>Model<input id="aiModel" list="aiModels" value="claude-sonnet-5-5"></label>
         <datalist id="aiModels"><option value="claude-sonnet-5-5"><option value="claude-haiku-4-5-20251001"><option value="claude-opus-5-5"><option value="gemini-2.5-flash"></datalist>
         <div class="end"><button class="btn primary" id="btnSaveAI">Save</button></div>
+      </div>
       </div>
     </div>
     <div class="panel">

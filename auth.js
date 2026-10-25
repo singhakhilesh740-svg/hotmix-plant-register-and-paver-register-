@@ -8,7 +8,10 @@ const SECTIONS = [
   { id: 'concrete', label: '🧱 Concrete Work', def: false },
 ];
 const FB_VER = '11.10.0';
-let FB = null, ME = null, ACCESS = null;
+let FB = null, ME = null, ACCESS = null, APPCFG = {};
+window.AI_ALLOWED = false;
+// login wale app mein chatbot Worker se chalta hai (key Worker mein)
+function workerMode() { return !!(FB && ME && APPCFG.workerUrl); }
 window.ALLOWED = SECTIONS.map(s => s.id);
 const isAdminUser = u => !!u && (u.email || '').toLowerCase() === ADMIN_EMAIL && u.emailVerified !== false;
 function buildSecNav() {
@@ -81,8 +84,10 @@ async function loadUserData(u) {
   cloudSave();
 }
 async function loadAccess(u) {
-  if (isAdminUser(u)) return SECTIONS.map(s => s.id).concat('admin');
+  try { const c = await FB.db.collection('config').doc('app').get(); APPCFG = c.exists ? c.data() : {}; } catch (e) { APPCFG = {}; }
+  if (isAdminUser(u)) { window.AI_ALLOWED = true; return SECTIONS.map(s => s.id).concat('admin'); }
   let sec = {}; try { const d = await FB.db.collection('access').doc(u.uid).get(); if (d.exists) sec = d.data().sections || {}; } catch (e) {}
+  window.AI_ALLOWED = sec.ai === true;
   return SECTIONS.filter(s => sec[s.id] ?? s.def).map(s => s.id);
 }
 // ---------- start ----------
@@ -115,6 +120,12 @@ document.addEventListener('click', async e => {
   }
   if (e.target.id === 'btnLogout') { if (!confirm('Logout karein?')) return; await pushWorks().catch(() => {}); await FB.auth.signOut(); location.reload(); }
   if (e.target.id === 'admRefresh') renderAdmin();
+  if (e.target.id === 'admCfgSave') {
+    const url = $('#admWorker').value.trim().replace(/\/$/, ''), model = $('#admModel').value.trim();
+    if (url && !/^https:\/\//.test(url)) return toast('Worker URL https:// se shuru hona chahiye');
+    try { APPCFG = { workerUrl: url, model }; await FB.db.collection('config').doc('app').set(APPCFG, { merge: true }); toast('Chatbot setting save hui'); }
+    catch (err) { toast('Save nahi hua: ' + err.message + ' (Firestore rules naye wale publish kiye?)'); }
+  }
   const sv = e.target.dataset?.admsave; if (sv) {
     const sec = {}; $$(`[data-admu="${sv}"]`).forEach(c => sec[c.dataset.s] = c.checked);
     try { await FB.db.collection('access').doc(sv).set({ sections: sec, by: ME.email, at: firebase.firestore.FieldValue.serverTimestamp() }); toast('Save hua — user dobara app khole to badlav dikhega'); }
@@ -125,16 +136,17 @@ document.addEventListener('click', async e => {
 async function renderAdmin() {
   const el = $('#admBox'); if (!el) return;
   if (!FB || !isAdminUser(ME)) { el.innerHTML = '<p class="muted">Admin panel sirf admin login par.</p>'; return; }
-  el.innerHTML = '<p class="muted">Load ho raha…</p>';
+  el.innerHTML = '<p class="muted">Load ho raha…</p>'; $('#admWorker').value = APPCFG.workerUrl || ''; $('#admModel').value = APPCFG.model || '';
   try {
     const [us, ac] = await Promise.all([FB.db.collection('users').get(), FB.db.collection('access').get()]);
     const acc = {}; ac.docs.forEach(d => acc[d.id] = d.data().sections || {});
     const rows = us.docs.map(d => ({ uid: d.id, ...d.data() })).sort((a, b) => (b.lastLogin?.seconds || 0) - (a.lastLogin?.seconds || 0));
-    el.innerHTML = `<div class="tablewrap"><table class="grid"><thead><tr><th></th><th>Naam</th><th>Email</th><th>Aakhri login</th>${SECTIONS.map(s => `<th>${s.label}</th>`).join('')}<th></th></tr></thead><tbody>` +
+    el.innerHTML = `<div class="tablewrap"><table class="grid"><thead><tr><th></th><th>Naam</th><th>Email</th><th>Aakhri login</th>${SECTIONS.map(s => `<th>${s.label}</th>`).join('')}<th>🤖 Chatbot</th><th></th></tr></thead><tbody>` +
       rows.map(r => { const adm = (r.email || '').toLowerCase() === ADMIN_EMAIL, a = acc[r.uid] || {};
         return `<tr><td>${r.photo ? `<img src="${esc(r.photo)}" referrerpolicy="no-referrer" style="width:28px;height:28px;border-radius:50%">` : ''}</td><td class="l">${esc(r.name || '')}${adm ? ' <span class="pill">Admin</span>' : ''}</td><td class="l">${esc(r.email || '')}</td>
           <td>${r.lastLogin?.seconds ? new Date(r.lastLogin.seconds * 1000).toLocaleString('en-IN') : ''}</td>
           ${SECTIONS.map(s => `<td><input type="checkbox" style="width:auto" data-admu="${r.uid}" data-s="${s.id}" ${adm || (a[s.id] ?? s.def) ? 'checked' : ''} ${adm ? 'disabled' : ''}></td>`).join('')}
+          <td><input type="checkbox" style="width:auto" data-admu="${r.uid}" data-s="ai" ${adm || a.ai === true ? 'checked' : ''} ${adm ? 'disabled' : ''}></td>
           <td>${adm ? '' : `<button class="btn sm primary" data-admsave="${r.uid}">Save</button>`}</td></tr>`; }).join('') + '</tbody></table></div>' +
       `<p class="muted">Koi naya user tabhi list mein aayega jab wo ek baar Google se login karega. Default: sirf Road Register.</p>`;
   } catch (e) { el.innerHTML = `<p class="flag">Users nahi aaye: ${esc(e.message)} — Firestore rules publish kiye hain?</p>`; }

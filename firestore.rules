@@ -14,6 +14,11 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
     }
+    // chatbot Worker URL / model — sab login user padh sakte, sirf admin badle
+    match /config/{doc} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
     // kaun sa section kise dikhega — sirf admin badal sakta hai
     match /access/{uid} {
       allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());

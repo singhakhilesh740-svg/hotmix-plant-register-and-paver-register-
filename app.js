@@ -988,6 +988,8 @@ function renderSettings() {
       <td>${itemEstQty(it) ? f2(itemEstQty(it)) + (it.estQty ? '' : ' <span class="muted">(Progress se)</span>') : '—'}</td>
       <td>${p.tack && itemEstQty(it) ? f3(itemEstQty(it) / (p.den * p.th / 1000) * p.tack / 1000) + ' MT' : '—'}</td><td><button class="btn sm" data-edit_it="${k}">✏️</button> <button class="btn sm danger" data-delit="${k}">🗑</button></td></tr>`; }).join('') || '<tr><td colspan="10" class="muted">Item add karo (jaise 10 – BM – 3.3%)</td></tr>') + '</tbody>';
   renderStaff(); renderGpBooks();
+  const wm = typeof workerMode === 'function' && workerMode(); $('#aiKeyPanel').classList.toggle('hidden', wm); $('#aiWorkerNote').classList.toggle('hidden', !wm);
+  $('#aiWorkerNote').innerHTML = wm ? (window.AI_ALLOWED ? '✅ Chatbot chalu hai — admin ki taraf se. Koi API key nahi chahiye.' : '⛔ Aapke liye chatbot abhi band hai. Admin se kaho ki Admin panel mein aapke naam ke saamne "🤖 Chatbot" tick kare.') : '';
   const a = aiCfg(); $('#aiProvider').value = a.provider || 'claude'; $('#aiKey').value = a.key || ''; $('#aiModel').value = a.model || defModel(a.provider || 'claude');
 }
 $('#btnSaveSet').addEventListener('click', () => {
@@ -1164,7 +1166,7 @@ $('#chatForm').addEventListener('submit', async e => {
   const ans = localAnswer(q);
   if (ans) return chatPush('bot', ans);
   const cfg = aiCfg();
-  if (!cfg.key) return chatPush('bot', 'Ye sawaal samajh nahi aaya. AI jawab ke liye Settings mein Claude (ya Gemini) API key daalo. Abhi main balance, production aur gatepass ke sawaal samajhta hoon.');
+  if (!aiReady()) return chatPush('bot', 'Ye sawaal samajh nahi aaya. ' + aiNoMsg('AI jawab') + ' Abhi main balance, production aur gatepass ke sawaal samajhta hoon.');
   const wait = appendMsg('bot', '…soch raha hoon');
   try {
     const ctx = JSON.stringify({ settings: DB.settings, opening: DB.opening, balanceMT: currentBalance(), gatepasses: DB.gatepasses.map(({ id, ...g }) => g),
@@ -1223,7 +1225,7 @@ async function handleChatFile(f) {
   try { dataUrl = isPdf ? await fileToDataUrl(f) : await shrinkImage(f, 1800); } catch (err) { return chatPush('bot', 'File nahi khuli: ' + esc(err.message)); }
   appendMsg('user', isPdf ? `📄 ${esc(f.name)}` : `<img src="${dataUrl}">`);
   DB.chat.push({ role: 'user', html: `📷 ${esc(f.name)}`, t: Date.now() }); save();
-  if (!cfg.key) return chatPush('bot', 'Photo padhne ke liye Settings → Chatbot mein Claude (ya Gemini) API key daalo. Tab tak Bitumen tab mein manual entry kar sakte ho.');
+  if (!aiReady()) return chatPush('bot', aiNoMsg('Photo padhne') + ' Tab tak Bitumen tab mein manual entry kar sakte ho.');
   const wait = appendMsg('bot', '…file padh raha hoon (estimate ho to thoda samay lagega)');
   try {
     const b64 = dataUrl.split(',')[1]; const mime = dataUrl.slice(5, dataUrl.indexOf(';'));
@@ -1358,8 +1360,12 @@ function showGatepassConfirm(j) {
   };
   appendMsg('bot', '', box);
 }
+// AI chal sakta hai? Login wale app mein Worker (admin ki anumati) se, warna is device ki key se
+function aiReady() { return (typeof workerMode === 'function' && workerMode()) ? !!window.AI_ALLOWED : !!aiCfg().key; }
+function aiNoMsg(what) { return (typeof workerMode === 'function' && workerMode()) ? `${what} ke liye chatbot ki anumati chahiye — Admin se kaho ki Admin panel mein aapke naam ke saamne "🤖 Chatbot" tick kare.` : `${what} ke liye Settings → Chatbot mein Claude (ya Gemini) API key daalo.`; }
 async function aiAsk(text, file, json) {
   const cfg = aiCfg();
+  if (typeof workerMode === 'function' && workerMode()) return claude(text, file, json);
   if ((cfg.provider || 'claude') === 'gemini') {
     const parts = [{ text }]; if (file) parts.push({ inline_data: { mime_type: file.mime, data: file.b64 } });
     return gemini(parts, json);
@@ -1373,7 +1379,12 @@ async function claude(text, file, json) {
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: file.b64 } }
     : { type: 'image', source: { type: 'base64', media_type: file.mime, data: file.b64 } });
   content.push({ type: 'text', text: json ? text + '\nRespond with the JSON object only, no other text.' : text });
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  const W = typeof workerMode === 'function' && workerMode();
+  if (W && !window.AI_ALLOWED) throw new Error(aiNoMsg('AI'));
+  const r = W
+    ? await fetch(APPCFG.workerUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + await ME.getIdToken() },
+        body: JSON.stringify({ model: APPCFG.model || 'claude-sonnet-5-5', max_tokens: 4000, messages: [{ role: 'user', content }] }) })
+    : await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'content-type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01',
